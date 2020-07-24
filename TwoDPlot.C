@@ -233,7 +233,6 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	gPad->SetLeftMargin(0.15) ;
 	gPad->SetBottomMargin(0.15) ;
 	if (logScale) gPad->SetLogy() ;
-	c1->Update();
 	mframe->Draw();
 	
 	
@@ -242,7 +241,6 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	gPad->SetLeftMargin(0.15) ;
 	gPad->SetBottomMargin(0.15) ;
 	if (logScale) gPad->SetLogy() ;
-	c1->Update();
 	double yMax2 = ptframe->GetMaximum();
 	TLatex* txtExc = new TLatex((ptMax+ptMin)/2,0.75*yMax2,Form("b_{exc} = %.2f", bExc.getVal()));
 	TLatex* txtDiss = new TLatex((ptMax+ptMin)/2,0.65*yMax2,Form("b_{diss} = %.2f", bDiss.getVal()));
@@ -343,7 +341,6 @@ void TwoDPlot(std::string rootfilePath, std::string rootfilePathMC, std::vector<
 	gROOT->ProcessLine(".L ExtendedCrystalBall.cxx+") ;
 	gSystem->Load("./ExtendedCrystalBall_cxx.so") ;
 	
-	
 	const int nPeriod = periods.size();
 	
 	
@@ -366,7 +363,8 @@ void TwoDPlot(std::string rootfilePath, std::string rootfilePathMC, std::vector<
 		ImportDataSet(wspace, fAnaTree, mCut, mMin, mMax, ptMin, ptMax);
 		AddModel(wspace, rootfilePath, rootfilePathMC, period);
 		wspace->Print();
-		MakePlots(wspace, period, useCuts, mMin, mMax, ptMin, ptMax, logScale, drawPulls);
+		std::cout << "\n\n\nlogScale = " << logScale << std::endl;
+		MakePlots(wspace, period, useCuts, mMin, mMax, ptMin, ptMax, drawPulls, logScale);
 		
 		
 	}
