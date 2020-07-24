@@ -242,8 +242,10 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	gPad->SetBottomMargin(0.15) ;
 	if (logScale) gPad->SetLogy() ;
 	double yMax2 = ptframe->GetMaximum();
-	TLatex* txtExc = new TLatex((ptMax+ptMin)/2,0.75*yMax2,Form("b_{exc} = %.2f", bExc.getVal()));
-	TLatex* txtDiss = new TLatex((ptMax+ptMin)/2,0.65*yMax2,Form("b_{diss} = %.2f", bDiss.getVal()));
+	double y1 = 0.75*yMax2, y2 = 0.65*yMax2;
+	if (logScale) {y1 = yMax2/pow(2.,1), y2 = yMax2/pow(2.,2);}
+	TLatex* txtExc = new TLatex(ptMin+(ptMax-ptMin)*2/3, y1,Form("b_{exc} = %.2f", bExc.getVal()));
+	TLatex* txtDiss = new TLatex(ptMin+(ptMax-ptMin)*2/3, y2,Form("b_{diss} = %.2f", bDiss.getVal()));
 	ptframe->addObject(txtExc) ;
 	ptframe->addObject(txtDiss) ;
 	ptframe->Draw();
