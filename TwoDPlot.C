@@ -182,8 +182,11 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	RooRealVar m = *ws->var("fTrkTrkM");
 	RooRealVar pt = *ws->var("fTrkTrkPt");
 	RooDataSet* data = (RooDataSet*) ws->data("data");
-	
 	RooAbsPdf* fitModel = ws->pdf("model");
+	
+	// Fit data
+	RooFitResult* r = fitModel->fitTo(*data, Extended(),Minos(true),Strategy(1), Save());
+	
 	RooAbsPdf* pdfJpsiExclusive = ws->pdf("pdfJpsiExclusive");
 	RooAbsPdf* pdfJpsiDissociative = ws->pdf("pdfJpsiDissociative");
 	RooAbsPdf* pdfJpsiGammaPb = ws->pdf("pdfJpsiGammaPb");
@@ -198,9 +201,6 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 
 	RooRealVar bDiss = *ws->var("bDiss");
 	RooRealVar bExc = *ws->var("bExc");
-	
-	// Fit data
-	RooFitResult* r = fitModel->fitTo(*data, Extended(),Minos(true),Strategy(1), Save());
 	
 	// Define mass frame
 	RooPlot* mframe = m.frame(Title("Fit of invariant mass"));
@@ -233,6 +233,7 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	gPad->SetLeftMargin(0.15) ;
 	gPad->SetBottomMargin(0.15) ;
 	if (logScale) gPad->SetLogy() ;
+	c1->Update();
 	mframe->Draw();
 	
 	
@@ -241,6 +242,7 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	gPad->SetLeftMargin(0.15) ;
 	gPad->SetBottomMargin(0.15) ;
 	if (logScale) gPad->SetLogy() ;
+	c1->Update();
 	double yMax2 = ptframe->GetMaximum();
 	TLatex* txtExc = new TLatex((ptMax+ptMin)/2,0.75*yMax2,Form("b_{exc} = %.2f", bExc.getVal()));
 	TLatex* txtDiss = new TLatex((ptMax+ptMin)/2,0.65*yMax2,Form("b_{diss} = %.2f", bDiss.getVal()));

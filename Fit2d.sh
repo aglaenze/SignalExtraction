@@ -7,7 +7,7 @@ rm *.pcm
 }
 
 clean
-exit
+
 muonfilter=std
 #muonfilter=nopXdca
 #muonfilter=noLpt
@@ -40,12 +40,11 @@ drawPulls=false		# draws graphs data-fit, in any case the graphs (data-fit)/sigm
 
 echo $muonfilter
 echo $periods
-root -l -q "ToyMC.C+($path_to_rootfiles_MC)"
-clean
+#root -l -q "ToyMC.C+($path_to_rootfiles_MC, $drawPulls)"
+#clean
 #root -l -q "TailParameters.C+($path_to_rootfiles_MC, $periods, $logScale)"
 #clean
-root -l -q "Splot.C+($path_to_rootfiles_data, $periods, $mMin, $mMax, $ptMin, $ptMax, $useCuts)"
+#root -l -q "Splot.C+($path_to_rootfiles_data, $periods, $mMin, $mMax, $ptMin, $ptMax, $useCuts)"
 clean
 root -l -q "TwoDPlot.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods, $mMin, $mMax, $ptMin, $ptMax, $useCuts, $logScale, $drawPulls)"
 clean
-root -l -q "TwoDPlot.C+($path_to_rootfiles_MC)"

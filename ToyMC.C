@@ -156,11 +156,12 @@ void DoSPlot(RooWorkspace* ws) {
 }
 
 
-void MakePlots(RooWorkspace *ws, std::string period) {
+void MakePlots(RooWorkspace *ws, std::string period, bool drawPulls) {
 	
 	//make some plots
 	TCanvas* cv = new TCanvas("splot","splot",900,900) ;
-	cv->Divide(3, 3);
+	if (drawPulls) cv->Divide(3, 3);
+	else {cv->Divide(3, 2); cv->SetCanvasSize(900, 600);}
 	
 	//get what we need of the workspace
 	RooAbsPdf* model = ws->pdf("mfit");
@@ -199,8 +200,8 @@ void MakePlots(RooWorkspace *ws, std::string period) {
 	// Get weighted data
 	// The SPlot class adds a new variable that has the name of the corresponding
 	// yield + "_sw".
-	RooDataSet * dataw_jpsi = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),0,"fsigJPsi_sw") ;
-	RooDataSet * dataw_bkg = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),0,"fbkg_sw") ;
+	RooDataSet *dataw_jpsi = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),0,"fsigJPsi_sw") ;
+	RooDataSet *dataw_bkg = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),0,"fbkg_sw") ;
 
 	// Extract pt templates to compare them with reconstructed data
 	RooRealVar yieldSignal("yieldSignal","yieldSignal",nEventsSignal);
@@ -219,6 +220,10 @@ void MakePlots(RooWorkspace *ws, std::string period) {
 	ptSignalModel->plotOn(frame2, LineStyle(kDashed), LineColor(kRed));
 	frame2->SetTitle("p_{T} distribution for J/#Psi with weights");
 	frame2->Draw() ;
+	TLegend* lgdJpsi = new TLegend(0.3, 0.7, 0.9, 0.9);
+	lgdJpsi->AddEntry(frame2->findObject("h_dataWithSWeights"), "reconstructed signal", "LP");
+	lgdJpsi->AddEntry(frame2->findObject("ptSignalMC_Norm[pt]"), "original distribution", "L");
+	lgdJpsi->Draw();
 	
 	// And for background
 	cv->cd(3);
@@ -227,9 +232,12 @@ void MakePlots(RooWorkspace *ws, std::string period) {
 	dataw_bkg->plotOn(frame3,DataError(RooAbsData::SumW2) ) ;
 	ptBkgModel->plotOn(frame3, LineStyle(kDashed), LineColor(kRed));
 	frame3->SetTitle("p_{T} distribution for #gamma#gamma #rightarrow #mu#mu with weights");
-
 	frame3->Draw() ;
 	frame3->Print("v");
+	TLegend* lgdBkg = new TLegend(0.3, 0.7, 0.9, 0.9);
+	lgdBkg->AddEntry(frame3->findObject("h_dataWithSWeights"), "reconstructed signal", "LP");
+	lgdBkg->AddEntry(frame3->findObject("ptBkgMC_Norm[pt]"), "original distribution", "L");
+	lgdBkg->Draw();
 	//return;
 	
 	// Then finally, draw quality plots
@@ -249,6 +257,8 @@ void MakePlots(RooWorkspace *ws, std::string period) {
 	hresid->SetTitle("Residuals (data - fit) of the mass fit");
 	hresid->Draw("");
 	
+	// Draw quality histograms
+	// First (data-fit)/sigma
 	// For signal pt
 	cv->cd(5);
 	gPad->SetLeftMargin(0.15);
@@ -256,14 +266,8 @@ void MakePlots(RooWorkspace *ws, std::string period) {
 	ptSignalModel->plotOn(frame2, Binning(40));
 	RooHist* hpull2 = frame2->pullHist();
 	hpull2->GetXaxis()->SetRangeUser(ptMin, ptMax);
-	hpull2->SetTitle("(data - fit)/#sigma of J/#Psi p_{T}");
+	hpull2->SetTitle("(reconstructed - original)/#sigma of J/#Psi p_{T}");
 	hpull2->Draw("");
-	cv->cd(8);
-	gPad->SetLeftMargin(0.15);
-	RooHist* hresid2 = frame2->residHist();
-	hresid2->GetXaxis()->SetRangeUser(ptMin, ptMax);
-	hresid2->SetTitle("Residuals (data - fit) of J/#Psi p_{T}");
-	hresid2->Draw("");
 	
 	// For background pt
 	cv->cd(6);
@@ -272,14 +276,25 @@ void MakePlots(RooWorkspace *ws, std::string period) {
 	ptBkgModel->plotOn(frame3, Binning(40));
 	RooHist* hpull3 = frame3->pullHist();
 	hpull3->GetXaxis()->SetRangeUser(ptMin, ptMax);
-	hpull3->SetTitle("(data - fit)/#sigma of bkg p_{T}");
+	hpull3->SetTitle("(reconstructed - original)/#sigma of bkg p_{T}");
 	hpull3->Draw("");
+	
+	// Draw pull histograms = data-fit
+	if (drawPulls) {
+	cv->cd(8);
+	gPad->SetLeftMargin(0.15);
+	RooHist* hresid2 = frame2->residHist();
+	hresid2->GetXaxis()->SetRangeUser(ptMin, ptMax);
+	hresid2->SetTitle("Residuals (reconstructed - original) of J/#Psi p_{T}");
+	hresid2->Draw("");
+	
 	cv->cd(9);
 	gPad->SetLeftMargin(0.15);
 	RooHist* hresid3 = frame3->residHist();
 	hresid3->GetXaxis()->SetRangeUser(ptMin, ptMax);
-	hresid3->SetTitle("Residuals (data - fit) of bkg p_{T}");
+	hresid3->SetTitle("Residuals (reconstructed - original) of bkg p_{T}");
 	hresid3->Draw("");
+	}
 
 	cv->SaveAs(Form("Plots/toyMC-splot-%s.pdf", period.c_str()));
 
@@ -422,7 +437,7 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 }
 
 // 2e étape : faire un sPlot pour extraire ma distribution en pt
-void ToyMC(std::string rootfilePathMC) {
+void ToyMC(std::string rootfilePathMC, bool drawPulls) {
 	
 	std::vector <std::string> periods = {"LHC16r", "LHC16s"};
 	const int nPeriods = periods.size();
@@ -455,7 +470,7 @@ void ToyMC(std::string rootfilePathMC) {
 		DoSPlot(wspace);
 		
 		GetPtHistMC(wspace, rootfilePathMC, period);
-		MakePlots(wspace, period);
+		MakePlots(wspace, period, drawPulls);
 		
 		//cleanup
 		delete wspace;
