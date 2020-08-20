@@ -45,8 +45,9 @@
 
 using namespace RooFit;
 
+Double_t mLimitPsi2s = 3.65;
 
-void AddModel(RooWorkspace* ws, std::string period) {
+void AddModel(RooWorkspace* ws, std::string period, Double_t mMax) {
 	// Define model
 	
 	//RooRealVar m("fTrkTrkM","M_{#mu#mu} (GeV/c2)",2.5,3.5);
@@ -103,12 +104,14 @@ void AddModel(RooWorkspace* ws, std::string period) {
 	RooRealVar fsigPsi2s("fsigPsi2s","signalPsi2s",100,0.,1.e3);
 	RooRealVar fbkg("fbkg","fbkg",500,0.,1.e7);
 	
-	RooAbsPdf* model = new RooAddPdf("mfit", "mfit", RooArgList(*jpsi, *psi2s, *bkg), RooArgList(fsigJpsi, fsigPsi2s, fbkg), kFALSE);
+	RooAbsPdf* model;
+	if (mMax > mLimitPsi2s) model = new RooAddPdf("mfit", "mfit", RooArgList(*jpsi, *psi2s, *bkg), RooArgList(fsigJpsi, fsigPsi2s, fbkg), kFALSE);
+	else model = new RooAddPdf("mfit", "mfit", RooArgList(*jpsi, *bkg), RooArgList(fsigJpsi, fbkg), kFALSE);
 	
 	ws->import(*model);
 }
 
-void AddPtModel(RooWorkspace* ws, std::string period, bool useMCtemplate) {
+void AddPtModel(RooWorkspace* ws, std::string period, bool useMCtemplate, bool diss, Double_t ptMin, Double_t ptMax) {
 	// Define fitting model for pt for J/Psi signal only
 	// Dissociative contribution and exclusive contribution
 	
@@ -116,9 +119,11 @@ void AddPtModel(RooWorkspace* ws, std::string period, bool useMCtemplate) {
 	
 	//JPsi Exclusive
 	RooAbsPdf* jpsiExclusive = nullptr;
-	RooRealVar bExc("bExc","bExc",5, 2, 8);
+	//RooRealVar bExc("bExc","bExc", 4, 3, 10);
+	RooRealVar bExc("bExc","bExc", 3.57);
+	if (period=="LHC16s") bExc.setVal(5.82);
 	if (useMCtemplate){
-		GetPtHistMC(ws, period, "kIncohJpsiToMu");
+		GetPtHistMC(ws, "/home/alidock/analysis-alice/p-Pb-2016/rootFiles", period, "kIncohJpsiToMu", ptMin, ptMax);
 		jpsiExclusive = ws->pdf("ptkIncohJpsiToMu");
 		jpsiExclusive->SetName("jpsiExc");
 	}
@@ -128,21 +133,28 @@ void AddPtModel(RooWorkspace* ws, std::string period, bool useMCtemplate) {
 	}
 	
 	// JPsi Dissociative
-	// H1 formula
-	RooRealVar bDiss("bDiss","bDiss",0.32, 0, 2);
-	RooGenericPdf *jpsiDissociative = new RooGenericPdf("jpsiDiss","dissociative jPsi PDF","(fTrkTrkPt*exp(-bDiss*(fTrkTrkPt**2)))",RooArgSet(pt,bDiss)) ;
-	
+	/*
+	 // H1 formula
+	 RooRealVar bDiss("bDiss","bDiss",0.32, 0, 2);
+	 RooGenericPdf *jpsiDissociative = new RooGenericPdf("jpsiDiss","dissociative jPsi PDF","(fTrkTrkPt*exp(-bDiss*(fTrkTrkPt**2)))",RooArgSet(pt,bDiss)) ;
+	 */
+	// H1 formula (the second one, with the power law)
+	RooRealVar bDiss("bDiss","bDiss", 1.3, 0, 10);
+	RooRealVar nDiss("nDiss","nDiss", 4, 1, 20);
+	RooGenericPdf *jpsiDissociative = new RooGenericPdf("jpsiDiss","Dissociative jPsi PDF","(fTrkTrkPt*(1.+(fTrkTrkPt**2)*(bDiss/nDiss))**(-nDiss))",RooArgSet(pt, nDiss, bDiss)) ;
 	
 	//RooRealVar fsig("fsig","signalPhi",0.1,0.,1.);
-	RooRealVar fsigJpsiDiss("fsigJpsiDiss","signalJPsiDiss",100,0.,1.e5);
-	RooRealVar fsigJpsiExc("fsigJpsiExc","fsigJpsiExc",100,0.,1.e5);
+	RooRealVar fsigJpsiExc("fsigJpsiExc","fsigJpsiExc",1000,0.,1.e5);
+	RooRealVar fsigJpsiDiss("fsigJpsiDiss","signalJPsiDiss",1000,0.,1.e5);
 	
-	RooAbsPdf* model = new RooAddPdf("ptfit", "ptfit", RooArgList(*jpsiDissociative, *jpsiExclusive), RooArgList(fsigJpsiDiss, fsigJpsiExc), kFALSE);
+	RooAbsPdf* model = nullptr;
+	if (diss) model = new RooAddPdf("ptfit", "ptfit", RooArgList(*jpsiExclusive, *jpsiDissociative), RooArgList(fsigJpsiExc, fsigJpsiDiss), kFALSE);
+	else model = new RooAddPdf("ptfit", "ptfit", RooArgList(*jpsiExclusive), RooArgList(fsigJpsiExc), kFALSE);
 	
 	ws->import(*model);
 }
 
-void DoSPlot(RooWorkspace* ws) {
+void DoSPlot(RooWorkspace* ws, Double_t mMax) {
 	RooAbsPdf* model = ws->pdf("mfit");
 	RooRealVar* jPsiYield = ws->var("fsigJpsi");
 	RooRealVar* psi2sYield = ws->var("fsigPsi2s");
@@ -163,14 +175,19 @@ void DoSPlot(RooWorkspace* ws) {
 	RooRealVar* n_jpsi_R = ws->var("n_jpsi_R");
 	
 	// Psi(2s)
-	RooRealVar* mean_psi2s = ws->var("mean_psi2s");
-	RooRealVar* sigma_psi2s = ws->var("sigma_psi2s");
-	//RooRealVar* alpha_jpsi = ws->var("alpha_jpsi");
-	//RooRealVar* n_jpsi = ws->var("n_jpsi");
-	RooRealVar* alpha_psi2s_L = ws->var("alpha_psi2s_L");
-	RooRealVar* n_psi2s_L = ws->var("n_psi2s_L");
-	RooRealVar* alpha_psi2s_R = ws->var("alpha_psi2s_R");
-	RooRealVar* n_psi2s_R = ws->var("n_psi2s_R");
+	RooRealVar *mean_psi2s, *sigma_psi2s, *alpha_psi2s_L, *n_psi2s_L, *alpha_psi2s_R, *n_psi2s_R;
+	if (mMax > mLimitPsi2s) {
+		mean_psi2s = ws->var("mean_psi2s");
+		sigma_psi2s = ws->var("sigma_psi2s");
+		alpha_psi2s_L = ws->var("alpha_psi2s_L");
+		n_psi2s_L = ws->var("n_psi2s_L");
+		alpha_psi2s_R = ws->var("alpha_psi2s_R");
+		n_psi2s_R = ws->var("n_psi2s_R");
+		alpha_psi2s_L->setConstant();
+		n_psi2s_L->setConstant();
+		alpha_psi2s_R->setConstant();
+		n_psi2s_R->setConstant();
+	}
 	
 	// Background
 	RooRealVar* a1 = ws->var("a1");
@@ -182,13 +199,6 @@ void DoSPlot(RooWorkspace* ws) {
 	alpha_jpsi_R->setConstant();
 	n_jpsi_R->setConstant();
 	
-	//mean_psi2s->setConstant();
-	//sigma_psi2s->setConstant();
-	alpha_psi2s_L->setConstant();
-	n_psi2s_L->setConstant();
-	alpha_psi2s_R->setConstant();
-	n_psi2s_R->setConstant();
-	
 	a1->setConstant();
 	
 	
@@ -197,7 +207,9 @@ void DoSPlot(RooWorkspace* ws) {
 	//Now we use the SPlot class to add SWeight to our data set
 	// based on our model and our yield variables
 	
-	RooStats::SPlot * sData = new RooStats::SPlot("sData","splot", *data, model, RooArgList(*jPsiYield, *psi2sYield, *bkgYield) );
+	RooStats::SPlot * sData;
+	if (mMax > mLimitPsi2s) sData = new RooStats::SPlot("sData","splot", *data, model, RooArgList(*jPsiYield, *psi2sYield, *bkgYield) );
+	else sData = new RooStats::SPlot("sData","splot", *data, model, RooArgList(*jPsiYield, *bkgYield) );
 	
 	//Check Sweight properties
 	std::cout << "Check SWeights: " << std::endl;
@@ -206,22 +218,32 @@ void DoSPlot(RooWorkspace* ws) {
 	<< jPsiYield->getVal() << ". From sWeights it is "
 	<< sData->GetYieldFromSWeight("fsigJpsi") << std::endl;
 	
-	std::cout << std::endl << "Yield of Psi(2s) is "
-	<< psi2sYield->getVal() << ". From sWeights it is "
-	<< sData->GetYieldFromSWeight("fsigPsi2s") << std::endl;
 	
 	std::cout << std::endl << "Yield of bkg is "
 	<< bkgYield->getVal() << ". From sWeights it is "
 	<< sData->GetYieldFromSWeight("fbkg") << std::endl;
 	
-	
-	for (Int_t i=0; i < 10; i ++ )
-	{
-		std::cout << "JPsi Weight "<< sData->GetSWeight(i, "fsigJpsi")
-		<< " psi(2s) Yield "<< sData->GetSWeight(i, "fsigPsi2s")
-		<< " bkg Yield "<< sData->GetSWeight(i, "fbkg")
-		<< " Total Weight "<< sData->GetSumOfEventSWeight(i)
-		<< std::endl;
+	if (mMax > mLimitPsi2s) {
+		std::cout << std::endl << "Yield of Psi(2s) is "
+		<< psi2sYield->getVal() << ". From sWeights it is "
+		<< sData->GetYieldFromSWeight("fsigPsi2s") << std::endl;
+		for (Int_t i=0; i < 10; i ++ )
+		{
+			std::cout << "JPsi Weight "<< sData->GetSWeight(i, "fsigJpsi")
+			<< " psi(2s) Yield "<< sData->GetSWeight(i, "fsigPsi2s")
+			<< " bkg Yield "<< sData->GetSWeight(i, "fbkg")
+			<< " Total Weight "<< sData->GetSumOfEventSWeight(i)
+			<< std::endl;
+		}
+	}
+	else {
+		for (Int_t i=0; i < 10; i ++ )
+		{
+			std::cout << "JPsi Weight "<< sData->GetSWeight(i, "fsigJpsi")
+			<< " bkg Yield "<< sData->GetSWeight(i, "fbkg")
+			<< " Total Weight "<< sData->GetSumOfEventSWeight(i)
+			<< std::endl;
+		}
 	}
 	
 	//import the new data set with Sweight
@@ -234,7 +256,7 @@ void DoSPlot(RooWorkspace* ws) {
 
 
 //____________________________________
-void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, bool useCuts, Double_t mMin, Double_t mMax){
+void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, bool useCuts, bool diss, Double_t mMin, Double_t mMax, Double_t ptMin, Double_t ptMax){
 	
 	bool drawMC = false;
 	
@@ -245,11 +267,9 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	//get what we need of the workspace
 	RooAbsPdf* model = ws->pdf("mfit");
 	RooAbsPdf* jPsiModel = ws->pdf("jpsi");
-	RooAbsPdf* psi2sModel = ws->pdf("psi2s");
 	RooAbsPdf* bkgModel = ws->pdf("exp");
 	
 	RooAbsPdf* ptmodel = ws->pdf("ptfit");
-	RooAbsPdf* jpsiDiss = ws->pdf("jpsiDiss");
 	RooAbsPdf* jpsiExc = ws->pdf("jpsiExc");
 	
 	RooRealVar* m = ws->var("fTrkTrkM");
@@ -266,15 +286,20 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	model->plotOn(frame);
 	model->plotOn(frame, Components(*model), LineStyle(kDashed), LineColor(kBlue));
 	model->plotOn(frame, Components(*jPsiModel), LineStyle(kDashed), LineColor(kRed));
-	model->plotOn(frame, Components(*psi2sModel), LineStyle(kDashed), LineColor(kOrange));
 	model->plotOn(frame, Components(*bkgModel), LineStyle(kDashed), LineColor(kGreen));
 	frame->SetTitle("Fit to model to discriminating variable");
 	double yMax0 = frame->GetMaximum();
-	TText* txt0 = new TText((mMin+mMax+0.1)/2,0.55*yMax0,Form("%.1f J/Psi", jPsiYield->getVal()));
-	TText* txtPsi2s = new TText((mMin+mMax+0.1)/2,0.45*yMax0,Form("%.1f Psi(2s)", psi2sYield->getVal()));
+	double xPos = (mMin+mMax+0.2)/2;
+	if (mMax < mLimitPsi2s) xPos = 2.6;
+	TText* txt0 = new TText(xPos,0.55*yMax0,Form("%.1f J/Psi", jPsiYield->getVal()));
 	//txt3->SetTextSize(0.05) ;
 	frame->addObject(txt0) ;
-	frame->addObject(txtPsi2s) ;
+	if (mMax > mLimitPsi2s) {
+		RooAbsPdf* psi2sModel = ws->pdf("psi2s");
+		model->plotOn(frame, Components(*psi2sModel), LineStyle(kDashed), LineColor(kOrange));
+		TText* txtPsi2s = new TText((mMin+mMax+0.1)/2,0.45*yMax0,Form("%.1f Psi(2s)", psi2sYield->getVal()));
+		frame->addObject(txtPsi2s) ;
+	}
 	frame->Draw();
 	
 	
@@ -297,47 +322,58 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	// yield + "_sw".
 	// create weighted data set for JPsi
 	RooDataSet * dataw_jpsi = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),0,"fsigJpsi_sw") ;
-	// create weighted data set for Psi(2s)
-	RooDataSet * dataw_psi2s = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),0,"fsigPsi2s_sw") ;
+	//RooDataSet * dataw_jpsi = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),"fTrkTrkM < 3.2 && fTrkTrkM > 2.8","fsigJpsi_sw") ;
 	// create weighted data set for Background
 	RooDataSet * dataw_bkg = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),0,"fbkg_sw") ;
 	
 	
 	// Draw pt with weights
 	cv->cd(2);
+	gPad->SetLeftMargin(0.15) ;
 	RooPlot* frameJpsi = pt->frame() ;
 	// Fit pt distrib of J/Psi with exclusive / dissociative components
 	ptmodel->fitTo(*dataw_jpsi, Extended(), Minos(true), Strategy(2));
 	dataw_jpsi->plotOn(frameJpsi, DataError(RooAbsData::SumW2) ) ;
 	ptmodel->plotOn(frameJpsi);
-	ptmodel->plotOn(frameJpsi, Components(*jpsiDiss), LineStyle(kDashed), LineColor(kRed));
 	ptmodel->plotOn(frameJpsi, Components(*jpsiExc), LineStyle(kDashed), LineColor(kGreen));
 	
 	frameJpsi->SetTitle("pt distribution for J/#Psi with weights");
 	
-	RooRealVar* jPsiDissYield = ws->var("fsigJpsiDiss");
 	RooRealVar* jPsiExclYield = ws->var("fsigJpsiExc");
 	double yMax = frameJpsi->GetMaximum();
-	TLatex* txt2 = new TLatex(1.5,0.75*yMax,Form("%.1f exclusive J/Psi", jPsiExclYield->getVal()));
-	TText* txt = new TText(1.5,0.65*yMax,Form("%.1f dissociative J/Psi", jPsiDissYield->getVal()));
+	TLatex* txt2 = new TLatex(1.9,0.75*yMax,Form("%.1f exclusive J/Psi", jPsiExclYield->getVal()));
 	//txt3->SetTextSize(0.05) ;
-	frameJpsi->addObject(txt) ;
 	frameJpsi->addObject(txt2) ;
 	// Write b parameters on the plot
-	RooRealVar* bDiss = ws->var("bDiss");
 	RooRealVar* bExc = ws->var("bExc");
-	TLatex* txtExc = new TLatex(1.5,0.45*yMax,Form("b_{exc} = %.2f", bExc->getVal()));
-	TLatex* txtDiss = new TLatex(1.5,0.35*yMax,Form("b_{diss} = %.2f", bDiss->getVal()));
+	TLatex* txtExc = new TLatex(1.9,0.45*yMax,Form("b_{exc} = %.2f #pm %.2f", bExc->getVal(), bExc->getError()));
 	frameJpsi->addObject(txtExc) ;
-	frameJpsi->addObject(txtDiss) ;
+	if (diss) {
+		RooAbsPdf* jpsiDiss = ws->pdf("jpsiDiss");
+		RooRealVar* jPsiDissYield = ws->var("fsigJpsiDiss");
+		RooRealVar* bDiss = ws->var("bDiss");
+		RooRealVar* nDiss = ws->var("nDiss");
+		ptmodel->plotOn(frameJpsi, Components(*jpsiDiss), LineStyle(kDashed), LineColor(kRed));
+		TText* txt = new TText(1.9,0.65*yMax,Form("%.1f dissociative J/Psi", jPsiDissYield->getVal()));
+		TLatex* txtDiss = new TLatex(1.9,0.35*yMax,Form("b_{diss} = %.2f #pm %.2f", bDiss->getVal(), bDiss->getError()));
+		frameJpsi->addObject(txt) ;
+		TLatex* txtDiss2 = new TLatex(1.9,0.25*yMax,Form("n_{diss} = %.2f #pm %.2f", nDiss->getVal(), nDiss->getError()));
+		frameJpsi->addObject(txtDiss) ;
+		frameJpsi->addObject(txtDiss2) ;
+	}
 	
 	frameJpsi->Draw() ;
 	
-	cv->cd(4);
-	RooPlot* framePsi2s = pt->frame() ;
-	dataw_psi2s->plotOn(framePsi2s, DataError(RooAbsData::SumW2) ) ;
-	framePsi2s->SetTitle("pt distribution for #Psi(2s) with weights");
-	framePsi2s->Draw() ;
+	if (mMax > mLimitPsi2s) {
+		cv->cd(4);
+		gPad->SetLeftMargin(0.15) ;
+		// create weighted data set for Psi(2s)
+		RooDataSet * dataw_psi2s = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),0,"fsigPsi2s_sw") ;
+		RooPlot* framePsi2s = pt->frame() ;
+		dataw_psi2s->plotOn(framePsi2s, DataError(RooAbsData::SumW2) ) ;
+		framePsi2s->SetTitle("pt distribution for #Psi(2s) with weights");
+		framePsi2s->Draw() ;
+	}
 	
 	
 	// Plot isolation for QCD component.
@@ -345,15 +381,20 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	// The SPlot class adds a new variable that has the name of the corresponding
 	// yield + "_sw".
 	cv->cd(6);
+	gPad->SetLeftMargin(0.15) ;
 	RooPlot* frameBkg = pt->frame() ;
 	dataw_bkg->plotOn(frameBkg,DataError(RooAbsData::SumW2) ) ;
 	
+	RooRealVar* bkgYield = ws->var("fbkg");
 	frameBkg->SetTitle("pt distribution for background with weights");
+	double yMax2 = frameBkg->GetMaximum();
+	TLatex* txtBkg = new TLatex(1.9,0.45*yMax2,Form("#Bkg = %.2f #pm %.2f", bkgYield->getVal(), bkgYield->getError()));
+	frameBkg->addObject(txtBkg) ;
 	
 	// Add MC templates for (gammma gamma to mu mu) for comparison
 	if (drawMC) {
-		GetPtHistMC(ws, period, "kTwoGammaToMuLow");
-		GetPtHistMC(ws, period, "kTwoGammaToMuMedium");
+		GetPtHistMC(ws, period, "kTwoGammaToMuLow", ptMin, ptMax);
+		GetPtHistMC(ws, period, "kTwoGammaToMuMedium", ptMin, ptMax);
 		RooAbsPdf* ptMuLow = ws->pdf("ptkTwoGammaToMuLow");
 		RooAbsPdf* ptMuMedium = ws->pdf("ptkTwoGammaToMuMedium");
 		RooRealVar fsigMuLow("fsigMuLow","signalMuLow",100,0.,2.e3);
@@ -387,6 +428,7 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	/*
 	 // Look at V0CCounts
 	 cv->cd(2);
+	 gPad->SetLeftMargin(0.15) ;
 	 RooRealVar* v0Ccounts = ws->var("fV0CCounts");
 	 RooPlot* frame6 = v0Ccounts->frame() ;
 	 //dataw_jpsi->plotOn(frame6, DataError(RooAbsData::SumW2) ) ;
@@ -394,7 +436,7 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	 
 	 frame6->SetTitle("V0C Counts");
 	 frame6->Draw() ;
-
+	 
 	 // Look at 2D hist of V0CCounts et pt
 	 TCanvas* c4 = new TCanvas("ptV0", "ptV0", 600, 600);
 	 TH1* hh_data = dataw_jpsi->createHistogram("fTrkTrkPt,fV0CCounts",40,10) ;
@@ -404,18 +446,19 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	 */
 	
 	
+	TFile* fNewTemplates = new TFile(Form("%s/sPlotTemplates-%s.root", rootfilePath.c_str(), period.c_str()),"RECREATE");
 	// And save pt shapes
 	TH1* hPt = dataw_jpsi->createHistogram("fTrkTrkPt",50) ;
-	TH1* hPtDissociative = jpsiDiss->createHistogram("fTrkTrkPt",50) ;
+	if (diss) {
+		RooAbsPdf* jpsiDiss = ws->pdf("jpsiDiss");
+		TH1* hPtDissociative = jpsiDiss->createHistogram("fTrkTrkPt",50) ;
+		hPtDissociative->SetName("hPtDissociative");
+		hPtDissociative->Write();
+	}
 	TH1* hPtExclusive = jpsiExc->createHistogram("fTrkTrkPt",50) ;
-	TH1* hPtBackground = dataw_bkg->createHistogram("fTrkTrkPt",50) ;
-	
-	
-	TFile* fNewTemplates = new TFile(Form("%s/sPlotTemplates-%s.root", rootfilePath.c_str(), period.c_str()),"RECREATE");
 	hPtExclusive->SetName("hPtExclusive");
 	hPtExclusive->Write();
-	hPtDissociative->SetName("hPtDissociative");
-	hPtDissociative->Write();
+	TH1* hPtBackground = dataw_bkg->createHistogram("fTrkTrkPt",50) ;
 	hPtBackground->SetName("hPtBackground");
 	hPtBackground->Write();
 	
@@ -437,7 +480,9 @@ void Splot(std::string rootfilePath = "", std::vector<std::string> periods = {"L
 	gStyle->SetLabelSize(.05, "XY");
 	//gStyle->SetMarkerSize(0.5);
 	//gStyle->SetMarkerStyle(20);
-
+	
+	bool diss = true;
+	
 	
 	const int nPeriod = periods.size();
 	for (int k = 0; k<nPeriod; k++) {
@@ -459,13 +504,13 @@ void Splot(std::string rootfilePath = "", std::vector<std::string> periods = {"L
 		//Create a new workspace to manage the project
 		RooWorkspace* wspace = new RooWorkspace("myJpsi");
 		ImportDataSet(wspace, fAnaTree, mCut, mMin, mMax, ptMin, ptMax);
-		AddModel(wspace, period);
-		AddPtModel(wspace, period, false);	// don't use MC template but H1 function
+		AddModel(wspace, period, mMax);
+		AddPtModel(wspace, period, false, diss, ptMin, ptMax);	// false = don't use MC template but H1 function
 		wspace->Print();
 		
-		DoSPlot(wspace);
-		MakePlots(wspace, rootfilePath, period, useCuts, mMin, mMax);
-
+		DoSPlot(wspace, mMax);
+		MakePlots(wspace, rootfilePath, period, useCuts, diss, mMin, mMax, ptMin, ptMax);
+		
 		//cleanup
 		delete wspace;
 	}

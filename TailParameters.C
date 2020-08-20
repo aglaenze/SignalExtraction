@@ -49,14 +49,14 @@ Double_t mMax = 4.0;
 
 RooPlot* DrawCB(std::string rootfilePath, std::string period, TString process, bool log) {
 	
-
+	
 	TFile *fSimu = new TFile(Form("%s/AnalysisResults_%s_MC_", rootfilePath.c_str(), period.c_str()) + process + ".root","READ");
 	TTree* fSimuTree = (TTree*)fSimu->Get("MyTask/fAnaTree");
 	
 	RooRealVar m("fTrkTrkM","M_{#mu#mu} (GeV/c2)",mMin, mMax);
 	
 	RooArgSet variables(m);
-
+	
 	// Import binned data (otherwise it never ends)
 	TH1F* histM = new TH1F("hM"+process, "hM"+process, 300, 2.5, 4.1);
 	fSimuTree->Draw("fTrkTrkM>>hM"+process);
@@ -117,7 +117,7 @@ RooPlot* DrawCB(std::string rootfilePath, std::string period, TString process, b
 }
 
 
-void TailParameters(std::string rootfilePath="", std::vector<std::string> periods = {"LHC16r", "LHC16s"}, bool logScale = false) {
+void TailParameters2(std::string rootfilePath="", std::vector<std::string> periods = {"LHC16r", "LHC16s"}, bool logScale = false) {
 	
 	gStyle->SetOptStat(0);
 	
@@ -145,5 +145,51 @@ void TailParameters(std::string rootfilePath="", std::vector<std::string> period
 		
 		cv->SaveAs(Form("Plots/2sidedCB-%s.pdf", period.c_str()));
 	}
+}
+
+void ExtractB(std::string rootfilePath, std::string period) {
+	
+	gStyle->SetOptStat(0);
+	
+	TFile *fSimu = new TFile(Form("%s/AnalysisResults_%s_MC_kIncohJpsiToMu.root", rootfilePath.c_str(), period.c_str()),"READ");
+	TTree* fSimuTree = (TTree*)fSimu->Get("MyTask/fAnaTree");
+	
+	RooRealVar pt("fTrkTrkPt","p_{T} (GeV/c2)", 0, 4);
+	RooArgSet variables(pt);
+	RooDataSet* data = new RooDataSet("data","data",variables,Import(*fSimuTree));
+
+	RooRealVar bExc("bExc","bExc", 6, 2, 10);
+	RooAbsPdf* jpsiExclusive = new RooGenericPdf("jpsiExc","exclusive jPsi PDF","(fTrkTrkPt*exp(-bExc*(fTrkTrkPt**2)))",RooArgSet(pt,bExc)) ;
+	jpsiExclusive->SetName("jpsiExc");
+	RooRealVar fsigJpsiExc("fsigJpsiExc","fsigJpsiExc",1000,0.,1.e8);
+	
+	RooAbsPdf* model = new RooAddPdf("ptfit", "ptfit", RooArgList(*jpsiExclusive), RooArgList(fsigJpsiExc), kFALSE);
+	
+	model->fitTo(*data, Extended(), Minos(true), Strategy(2));
+	
+	RooPlot* ptframe = pt.frame(Title("Fit of pt of exclusive J/Psi"));
+	model->plotOn(ptframe, Name("MC"), LineColor(kRed));
+	
+	double yMax = ptframe->GetMaximum();
+	TLatex* txtExc = new TLatex(1.5,0.45*yMax,Form("b_{exc} = %.2f #pm %.2f", bExc.getVal(), bExc.getError()));
+	ptframe->addObject(txtExc) ;
+	
+	ptframe->Draw();
 	
 }
+
+void TailParameters(std::string rootfilePath="", std::vector<std::string> periods = {"LHC16r", "LHC16s"}, bool logScale = false) {
+	
+	gStyle->SetOptStat(0);
+	
+	TCanvas* cv = new TCanvas("cv","cv",800,800) ;
+	cv->Divide(1,2);
+	const int nPeriod = periods.size();
+	for (int k = 0; k<nPeriod;k++) {
+		std::string period = periods[k];
+		cv->cd(k+1);
+		ExtractB(rootfilePath, period);
+	}
+	cv->SaveAs("Plots/ExcBparam.pdf");
+}
+

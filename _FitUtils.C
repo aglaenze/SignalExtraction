@@ -63,16 +63,31 @@ std::list<TCut> DefineCuts(std::string period) {
 	 ZNcut[1] = !ZNcut[1];
 	 */
 	
-	ADcut[0] = "!(fADADecision==1)";
-	ADcut[1] = "!(fADCDecision==1)";
-	V0cut[0] = "fV0ADecision == 0 && (fV0CDecision==0 || fV0CDecision==1)";
-	V0cut[1] = "(fV0ADecision==0 || fV0ADecision==1)";
-	/*V0cut[0] = "fV0ADecision == 0";
-	V0cut[1] = "";*/
+	bool diss = true;
+	if (diss) {
+		ADcut[0] = "!(fADADecision==1)";	// Pb does not dissociate
+		ADcut[1] = "!(fADCDecision==1)";
+		
+		V0cut[0] = "fV0ADecision == 0";		// Pb does not dissociate
+		V0cut[1] = "";
+	}
+	else {
+		ADcut[0] = "!(fADCDecision==1) && !(fADADecision==1)";	// Pb and p do not dissociate
+		ADcut[1] = "!(fADCDecision==1) && !(fADADecision==1)";
+		/*
+		 ADcut[0] = "(fADCDecision==0) && (fADADecision==0)";
+		 ADcut[1] = "(fADCDecision==0) && (fADADecision==0)";
+		 */
+		V0cut[0] = "fV0ADecision == 0";		// Pb does not dissociate
+		//V0cut[1] = "(fV0ADecision==0 || fV0ADecision==1)";
+		V0cut[1] = "fV0CDecision == 0";		// p does not dissociate
+		//V0cut[1] = "fV0CDecision==0 && (fV0ADecision==0 || fV0ADecision==1)";
+	}
 	
 	TCut unlikeSignCut = "(fTrkQ1 < 0 && fTrkQ2 > 0) || (fTrkQ1 > 0 && fTrkQ2 < 0)";
-	//std::list<TCut> mCutList = {"", unlikeSignCut, ZNcut[i], ADcut[i], V0cut[i], "fTracklets == 0"};
-	std::list<TCut> mCutList = {"", unlikeSignCut, ZNcut[i], ADcut[i]};
+	//std::list<TCut> mCutList = {"", unlikeSignCut, ZNcut[i], ADcut[i], V0cut[i]};
+	std::list<TCut> mCutList = {"", ZNcut[i], ADcut[i], V0cut[i]};
+	//std::list<TCut> mCutList = {"", unlikeSignCut, ZNcut[i], ADcut[i]};
 	return mCutList;
 }
 
@@ -148,10 +163,10 @@ void GetPtHistMC(RooWorkspace* ws, std::string rootfilePathMC, std::string perio
 	TFile *fSimu = new TFile(Form("%s/AnalysisResults_%s_MC_", rootfilePathMC.c_str(), period.c_str()) + process + ".root","READ");
 	TTree* fAnaTree = (TTree*)fSimu->Get("MyTask/fAnaTree");
 	fAnaTree->Draw("fTrkTrkPt");
-
+	
 	RooRealVar pt("fTrkTrkPt","Dimuon p_{T} (GeV/c)",ptMin,ptMax);
 	RooDataSet* data = new RooDataSet("data","data",RooArgSet(pt),Import(*fAnaTree));
-
+	
 	Int_t nBins = int((ptMax-ptMin)*100);
 	TH1F* histPt = new TH1F("hPt"+process, "hPt"+process, nBins, ptMin, ptMax);
 	fAnaTree->Draw("fTrkTrkPt>>hPt"+process);

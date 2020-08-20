@@ -44,7 +44,9 @@
 
 using namespace RooFit;
 
-void AddModel(RooWorkspace* ws, std::string rootfilePath, std::string rootfilePathMC, std::string period) {
+Double_t mLimitPsi2s = 3.65;
+
+void AddModel(RooWorkspace* ws, std::string rootfilePath, std::string rootfilePathMC, std::string period, Double_t mMax) {
 	// Define 2D model
 	// First define fits in mass
 	// Second define fits in pt
@@ -102,8 +104,13 @@ void AddModel(RooWorkspace* ws, std::string rootfilePath, std::string rootfilePa
 	// Now pt PDFs
 	
 	// Contribution from exclusive J/Psis
+	
 	// Using H1 formula (b is free)
 	RooRealVar bExc("bExc","bExc", 2.79116, 2, 8);
+	//RooRealVar bExc("bExc","bExc", 3.57);
+	//RooRealVar bExc("bExc","bExc", 2.66);
+	//if (period=="LHC16s") bExc.setVal(5.82);
+	//if (period=="LHC16s") bExc.setVal(4.78);
 	// H1 formula
 	RooGenericPdf *ptPdfExclusive = new RooGenericPdf("jpsiExc","exclusive jPsi PDF","(fTrkTrkPt*exp(-bExc*(fTrkTrkPt**2)))",RooArgSet(pt,bExc)) ;
 	
@@ -128,10 +135,15 @@ void AddModel(RooWorkspace* ws, std::string rootfilePath, std::string rootfilePa
 	 RooDataHist* ptHistDissociative = new RooDataHist("ptHistData","ptHistData", RooArgList(pt),hPtDissociative);
 	 RooHistPdf* ptDissociative = new RooHistPdf("ptDissociative", "ptDissociative", pt, *ptHistDissociative);
 	 */
-	// Using H1 formula (b is free)
-	RooRealVar bDiss("bDiss","bDiss", 0.323027, 0, 2);
-	// H1 formula
-	RooGenericPdf *ptDissociative = new RooGenericPdf("jpsiDiss","Dissociative jPsi PDF","(fTrkTrkPt*exp(-bDiss*(fTrkTrkPt**2)))",RooArgSet(pt,bDiss)) ;
+	/*
+	 // H1 formula (the first one, with the exp)
+	 RooRealVar bDiss("bDiss","bDiss", 0.323027, 0, 2);
+	 RooGenericPdf *ptDissociative = new RooGenericPdf("jpsiDiss","Dissociative jPsi PDF","(fTrkTrkPt*exp(-bDiss*(fTrkTrkPt**2)))", RooArgSet(pt,bDiss)) ;
+	 */
+	// H1 formula (the second one, with the power law)
+	RooRealVar bDiss("bDiss","bDiss", 1.25, 0, 20);
+	RooRealVar nDiss("nDiss","nDiss", 6.2, 1, 20);
+	RooGenericPdf *ptDissociative = new RooGenericPdf("jpsiDiss","Dissociative jPsi PDF","(fTrkTrkPt*(1.+(fTrkTrkPt**2)*(bDiss/nDiss))**(-nDiss))",RooArgSet(pt, nDiss, bDiss)) ;
 	
 	// Contribution from gamma Pb events
 	// using pt template from MC data
@@ -160,18 +172,34 @@ void AddModel(RooWorkspace* ws, std::string rootfilePath, std::string rootfilePa
 	RooProdPdf* pdfBackground = new RooProdPdf("pdfBackground","bkg*ptBackground",RooArgList(bkg,*ptBackground));
 	
 	// All yields
-	RooRealVar yieldJpsiExclusive("yieldJpsiExclusive","yieldJpsiExclusive",100, 0.1, 2.e4);
-	RooRealVar yieldJpsiDissociative("yieldJpsiDissociative","yieldJpsiDissociative",1000, 0.1, 2.e4);
+	RooRealVar yieldJpsiExclusive("yieldJpsiExclusive","yieldJpsiExclusive",2000, 0.1, 1.e4);
+	RooRealVar yieldJpsiDissociative("yieldJpsiDissociative","yieldJpsiDissociative",500, 0.1, 1.e4);
 	RooRealVar yieldJpsiGammaPb("yieldJpsiGammaPb","yieldJpsiGammaPb",10, 0.1, 2.e3);
 	RooRealVar yieldPsi2s("yieldPsi2s","yieldPsi2s",150, 10, 2.e4);
 	RooRealVar yieldBkg("yieldBkg","yieldBkg",500,0.,2.e4);
+	//RooRealVar yieldBkg("yieldBkg","yieldBkg",122);
 	
+	/*
 	// Assemble all components in sets
+	RooArgList* pdfList;
+	RooArgList yieldList;
+	if (mMax > mLimitPsi2s) {
+		pdfList = new RooArgList(*pdfJpsiExclusive, *pdfJpsiDissociative, *pdfJpsiGammaPb, *pdfPsi2s, *pdfBackground);
+		yieldList = RooArgList(yieldJpsiExclusive, yieldJpsiDissociative, yieldJpsiGammaPb, yieldPsi2s, yieldBkg);
+	}
+	else {
+		pdfList = new RooArgList(*pdfJpsiExclusive, *pdfJpsiDissociative, *pdfJpsiGammaPb, *pdfBackground);
+		yieldList = RooArgList(yieldJpsiExclusive, yieldJpsiDissociative, yieldJpsiGammaPb, yieldBkg);
+	}
+	 */
 	RooArgList* pdfList = new RooArgList(*pdfJpsiExclusive, *pdfJpsiDissociative, *pdfJpsiGammaPb, *pdfPsi2s, *pdfBackground);
 	RooArgList yieldList = RooArgList(yieldJpsiExclusive, yieldJpsiDissociative, yieldJpsiGammaPb, yieldPsi2s, yieldBkg);
-	
+	RooArgList* pdfList2 = new RooArgList(*pdfJpsiExclusive, *pdfJpsiDissociative, *pdfJpsiGammaPb, *pdfPsi2s, *pdfBackground);
+	RooArgList yieldList2 = RooArgList(yieldJpsiExclusive, yieldJpsiDissociative, yieldJpsiGammaPb, yieldPsi2s, yieldBkg);
 	// Create fit model
-	RooAbsPdf* fitModel = new RooAddPdf("model", "model", *pdfList, yieldList, kFALSE);
+	RooAbsPdf* fitModel;
+	if (mMax > mLimitPsi2s) fitModel = new RooAddPdf("model", "model", *pdfList, yieldList, kFALSE);
+	else fitModel = new RooAddPdf("model", "model", *pdfList2, yieldList2, kFALSE);
 	
 	ws->import(*fitModel);
 }
@@ -179,8 +207,8 @@ void AddModel(RooWorkspace* ws, std::string rootfilePath, std::string rootfilePa
 void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin, Double_t mMax, Double_t ptMin, Double_t ptMax, bool drawPulls, bool logScale) {
 	
 	//get what we need of the workspace
-	RooRealVar m = *ws->var("fTrkTrkM");
-	RooRealVar pt = *ws->var("fTrkTrkPt");
+	RooRealVar* m = ws->var("fTrkTrkM");
+	RooRealVar* pt = ws->var("fTrkTrkPt");
 	RooDataSet* data = (RooDataSet*) ws->data("data");
 	RooAbsPdf* fitModel = ws->pdf("model");
 	
@@ -190,44 +218,50 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	RooAbsPdf* pdfJpsiExclusive = ws->pdf("pdfJpsiExclusive");
 	RooAbsPdf* pdfJpsiDissociative = ws->pdf("pdfJpsiDissociative");
 	RooAbsPdf* pdfJpsiGammaPb = ws->pdf("pdfJpsiGammaPb");
-	RooAbsPdf* pdfPsi2s = ws->pdf("pdfPsi2s");
 	RooAbsPdf* pdfBackground = ws->pdf("pdfBackground");
-
-	RooRealVar yieldJpsiExclusive = *ws->var("yieldJpsiExclusive");
-	RooRealVar yieldJpsiDissociative = *ws->var("yieldJpsiDissociative");
-	RooRealVar yieldJpsiGammaPb = *ws->var("yieldJpsiGammaPb");
-	RooRealVar yieldPsi2s = *ws->var("yieldPsi2s");
-	RooRealVar yieldBkg = *ws->var("yieldBkg");
-
-	RooRealVar bDiss = *ws->var("bDiss");
-	RooRealVar bExc = *ws->var("bExc");
+	
+	RooRealVar* yieldJpsiExclusive = ws->var("yieldJpsiExclusive");
+	RooRealVar* yieldJpsiDissociative = ws->var("yieldJpsiDissociative");
+	RooRealVar* yieldJpsiGammaPb = ws->var("yieldJpsiGammaPb");
+	RooRealVar* yieldBkg = ws->var("yieldBkg");
+	
+	RooRealVar* yieldPsi2s = nullptr;
+	RooAbsPdf* pdfPsi2s = nullptr;
+	if (mMax > mLimitPsi2s) {
+		pdfPsi2s = ws->pdf("pdfPsi2s");
+		yieldPsi2s = ws->var("yieldPsi2s");
+	}
+	
+	RooRealVar* bDiss = ws->var("bDiss");
+	RooRealVar* bExc = ws->var("bExc");
+	RooRealVar* nDiss = ws->var("nDiss");
 	
 	// Define mass frame
-	RooPlot* mframe = m.frame(Title("Fit of invariant mass"));
+	RooPlot* mframe = m->frame(Title("Fit of invariant mass"));
 	data->plotOn(mframe);
 	fitModel->plotOn(mframe, Name("sum"), LineColor(kRed), LineWidth(1));
 	fitModel->plotOn(mframe,Name("pdfJpsiExclusive"),Components(*pdfJpsiExclusive),LineStyle(kDashed), LineColor(2), LineWidth(1));
 	fitModel->plotOn(mframe,Name("pdfJpsiDissociative"),Components(*pdfJpsiDissociative),LineStyle(kDashed), LineColor(3), LineWidth(1));
 	fitModel->plotOn(mframe,Name("pdfJpsiGammaPb"),Components(*pdfJpsiGammaPb),LineStyle(kDashed), LineColor(4), LineWidth(1));
-	fitModel->plotOn(mframe,Name("pdfPsi2s"),Components(*pdfPsi2s),LineStyle(kDashed), LineColor(6), LineWidth(1));
+	if (mMax > mLimitPsi2s) fitModel->plotOn(mframe,Name("pdfPsi2s"),Components(*pdfPsi2s),LineStyle(kDashed), LineColor(6), LineWidth(1));
 	fitModel->plotOn(mframe,Name("pdfBackground"),Components(*pdfBackground),LineStyle(kDashed), LineColor(7), LineWidth(1));
 	
 	// Define pt frame
-	RooPlot* ptframe = pt.frame(Title("Fit of pt"));
+	RooPlot* ptframe = pt->frame(Title("Fit of pt"));
 	data->plotOn(ptframe);
 	fitModel->plotOn(ptframe, Name("sum"), LineColor(kRed), LineWidth(1));
 	fitModel->plotOn(ptframe,Name("pdfJpsiExclusive"),Components(*pdfJpsiExclusive),LineStyle(kDashed), LineColor(2), LineWidth(1));
 	fitModel->plotOn(ptframe,Name("pdfJpsiDissociative"),Components(*pdfJpsiDissociative),LineStyle(kDashed), LineColor(3), LineWidth(1));
 	fitModel->plotOn(ptframe,Name("pdfJpsiGammaPb"),Components(*pdfJpsiGammaPb),LineStyle(kDashed), LineColor(4), LineWidth(1));
-	fitModel->plotOn(ptframe,Name("pdfPsi2s"),Components(*pdfPsi2s),LineStyle(kDashed), LineColor(6), LineWidth(1));
+	if (mMax > mLimitPsi2s) fitModel->plotOn(ptframe,Name("pdfPsi2s"),Components(*pdfPsi2s),LineStyle(kDashed), LineColor(6), LineWidth(1));
 	fitModel->plotOn(ptframe,Name("pdfBackground"),Components(*pdfBackground),LineStyle(kDashed), LineColor(7), LineWidth(1));
+	
 	
 	TCanvas* c1 = new TCanvas("2Dplot","2D fit",1800,1200) ;
 	//TCanvas* c1 = new TCanvas("2Dplot","2D fit",800,300) ;
 	if (drawPulls) c1->Divide(3,3) ;
 	else {c1->Divide(3,2) ; c1->SetCanvasSize(1800, 800);}
-	
-	
+
 	// Mass Plot
 	c1->cd(2) ;
 	gPad->SetLeftMargin(0.15) ;
@@ -235,19 +269,20 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	if (logScale) gPad->SetLogy() ;
 	mframe->Draw();
 	
-	
 	// pt plot
 	c1->cd(3) ;
 	gPad->SetLeftMargin(0.15) ;
 	gPad->SetBottomMargin(0.15) ;
 	if (logScale) gPad->SetLogy() ;
 	double yMax2 = ptframe->GetMaximum();
-	double y1 = 0.75*yMax2, y2 = 0.65*yMax2;
-	if (logScale) {y1 = yMax2/pow(2.,1), y2 = yMax2/pow(2.,2);}
-	TLatex* txtExc = new TLatex(ptMin+(ptMax-ptMin)*2/3, y1,Form("b_{exc} = %.2f", bExc.getVal()));
-	TLatex* txtDiss = new TLatex(ptMin+(ptMax-ptMin)*2/3, y2,Form("b_{diss} = %.2f", bDiss.getVal()));
+	double y1 = 0.75*yMax2, y2 = 0.65*yMax2, y3 = 0.57*yMax2;
+	if (logScale) {y1 = yMax2/pow(2.,1), y2 = yMax2/pow(2.,2), y3 = yMax2/pow(2.,2.8);}
+	TLatex* txtExc = new TLatex(ptMin+(ptMax-ptMin)*1/2, y1,Form("b_{exc} = %.2f #pm %.2f", bExc->getVal(), bExc->getError()));
+	TLatex* txtDiss = new TLatex(ptMin+(ptMax-ptMin)*1/2, y2,Form("b_{diss} = %.2f #pm %.2f", bDiss->getVal(), bDiss->getError()));
+	TLatex* txtDiss2 = new TLatex(ptMin+(ptMax-ptMin)*1/2, y3,Form("n_{diss} = %.2f #pm %.2f", nDiss->getVal(), nDiss->getError()));
 	ptframe->addObject(txtExc) ;
 	ptframe->addObject(txtDiss) ;
+	ptframe->addObject(txtDiss2) ;
 	ptframe->Draw();
 	
 	// Quality plots: (data-fit)/sigma
@@ -296,7 +331,7 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	legend->AddEntry(ptframe->findObject("pdfJpsiExclusive"), "Exclusive J/Psi","L");
 	legend->AddEntry(ptframe->findObject("pdfJpsiDissociative"), "Dissociative J/Psi","L");
 	legend->AddEntry(ptframe->findObject("pdfJpsiGammaPb"), "#gamma + Pb","L");
-	legend->AddEntry(ptframe->findObject("pdfPsi2s"), "Psi(2s)","L");
+	if (mMax > mLimitPsi2s) legend->AddEntry(ptframe->findObject("pdfPsi2s"), "Psi(2s)","L");
 	legend->AddEntry(ptframe->findObject("pdfBackground"), "#gamma#gamma #rightarrow #mu^{+} #mu^{-}","L");
 	legend->AddEntry(ptframe->findObject("sum"),"sum","L");
 	legend->Draw();
@@ -306,20 +341,23 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	
 	// Write number of candidates
 	//TLatex* txt1 = new TLatex(3.3,0.9*yMax,Form("Coherent Jpsi : %.1f", yieldCohJpsi.getVal()));
-	TLatex* txt2 = new TLatex(0.2,0.9,Form("Exclusive J/#Psi : %.1f #pm %.1f", yieldJpsiExclusive.getVal(), yieldJpsiExclusive.getError()));
-	TLatex* txt3 = new TLatex(0.2,0.8,Form("Dissociative J/#Psi : %.1f #pm %.1f", yieldJpsiDissociative.getVal(), yieldJpsiDissociative.getError()));
-	TLatex* txt4 = new TLatex(0.2,0.7,Form("#gamma-Pb J/#Psi : %.1f #pm %.1f", yieldJpsiGammaPb.getVal(), yieldJpsiGammaPb.getError()));
-	TLatex* txt5 = new TLatex(0.2,0.6,Form("#Psi(2s) : %.1f #pm %.1f", yieldPsi2s.getVal(), yieldPsi2s.getError()));
-	TLatex* txt6 = new TLatex(0.2,0.5,Form("#gamma#gamma #rightarrow #mu^{+} #mu^{-} : %.1f #pm %.1f", yieldBkg.getVal(), yieldBkg.getError()));
+	TLatex* txt2 = new TLatex(0.2,0.9,Form("Exclusive J/#Psi : %.1f #pm %.1f", yieldJpsiExclusive->getVal(), yieldJpsiExclusive->getError()));
+	TLatex* txt3 = new TLatex(0.2,0.8,Form("Dissociative J/#Psi : %.1f #pm %.1f", yieldJpsiDissociative->getVal(), yieldJpsiDissociative->getError()));
+	TLatex* txt4 = new TLatex(0.2,0.7,Form("#gamma-Pb J/#Psi : %.1f #pm %.1f", yieldJpsiGammaPb->getVal(), yieldJpsiGammaPb->getError()));
+	if (mMax > mLimitPsi2s) {
+		TLatex* txt5 = new TLatex(0.2,0.6,Form("#Psi(2s) : %.1f #pm %.1f", yieldPsi2s->getVal(), yieldPsi2s->getError()));
+		txt5->Draw();
+	}
+	TLatex* txt6 = new TLatex(0.2,0.5,Form("#gamma#gamma #rightarrow #mu^{+} #mu^{-} : %.1f #pm %.1f", yieldBkg->getVal(), yieldBkg->getError()));
+	txt2->Draw(); txt3->Draw(); txt4->Draw(); txt6->Draw();
 	
 	// Compute ratios N_diss/N_exc and N_(gamma-Pb)/N_exc
-	RooFormulaVar r_diss_exc("r_diss_exc","yieldJpsiDissociative/yieldJpsiExclusive",RooArgSet(yieldJpsiDissociative, yieldJpsiExclusive));
-	RooFormulaVar r_gammaPb_exc("r_gammaPb_exc","yieldJpsiGammaPb/yieldJpsiExclusive",RooArgSet(yieldJpsiGammaPb, yieldJpsiExclusive));
+	RooFormulaVar r_diss_exc("r_diss_exc","yieldJpsiDissociative/yieldJpsiExclusive",RooArgSet(*yieldJpsiDissociative, *yieldJpsiExclusive));
+	RooFormulaVar r_gammaPb_exc("r_gammaPb_exc","yieldJpsiGammaPb/yieldJpsiExclusive",RooArgSet(*yieldJpsiGammaPb, *yieldJpsiExclusive));
 	std::string percent = "%";
 	TLatex* txt7 = new TLatex(0.2,0.3,Form("N_{diss}/N_{exc} = %.2f #pm %.2f %s", r_diss_exc.getVal()*100, r_diss_exc.getPropagatedError(*r)*100, percent.c_str()));
 	TLatex* txt8 = new TLatex(0.2,0.2,Form("N_{#gamma-Pb}/N_{exc} = %.2f #pm %.2f %s", r_gammaPb_exc.getVal()*100, r_gammaPb_exc.getPropagatedError(*r)*100, percent.c_str()));
-	 
-	txt2->Draw(); txt3->Draw(); txt4->Draw(); txt5->Draw(); txt6->Draw(); txt7->Draw(); txt8->Draw();
+	txt7->Draw(); txt8->Draw();
 	
 	// save plot
 	std::string cutType = "";
@@ -345,7 +383,6 @@ void TwoDPlot(std::string rootfilePath, std::string rootfilePathMC, std::vector<
 	
 	const int nPeriod = periods.size();
 	
-	
 	for (int k = 0; k<nPeriod; k++) {
 		std::string period = periods[k];
 		// Define cuts
@@ -363,9 +400,8 @@ void TwoDPlot(std::string rootfilePath, std::string rootfilePathMC, std::vector<
 		//Create a new workspace to manage the project
 		RooWorkspace* wspace = new RooWorkspace("myJpsi");
 		ImportDataSet(wspace, fAnaTree, mCut, mMin, mMax, ptMin, ptMax);
-		AddModel(wspace, rootfilePath, rootfilePathMC, period);
+		AddModel(wspace, rootfilePath, rootfilePathMC, period, mMax);
 		wspace->Print();
-		std::cout << "\n\n\nlogScale = " << logScale << std::endl;
 		MakePlots(wspace, period, useCuts, mMin, mMax, ptMin, ptMax, drawPulls, logScale);
 		
 		

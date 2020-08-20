@@ -1,1 +1,5 @@
 .DS_Store
+plot*
+*.d
+*.pcm
+*.so
