@@ -27,26 +27,29 @@ path_to_rootfiles_MC=\"/home/alidock/analysis-alice/p-Pb-2016/rootFiles\"
 periods="{\"LHC16r\", \"LHC16s\"}"
 #periods="{\"LHC16r\"}"
 
-mMin=2.5
-mMax=3.9
+#mMin=2.5
+#mMax=3.9
 
-#mMin=2.7
-#mMax=3.4
+mMin=2.6
+mMax=3.5
 
 ptMin=0
-ptMax=3.5
+ptMax=8
 #useCuts=true
 useCuts=true
-logScale=false
+logScale=true
 drawPulls=false		# draws graphs data-fit, in any case the graphs (data-fit)/sigma are plotted
 
 
 echo $muonfilter
 echo $periods
 
+clean
 
 root -l -q "Splot.C+($path_to_rootfiles_data, $periods, $mMin, $mMax, $ptMin, $ptMax, $useCuts)"
 clean
+exit
+
 root -l -q "TwoDPlot.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods, $mMin, $mMax, $ptMin, $ptMax, $useCuts, $logScale, $drawPulls)"
 clean
 exit

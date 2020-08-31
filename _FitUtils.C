@@ -85,8 +85,8 @@ std::list<TCut> DefineCuts(std::string period) {
 	}
 	
 	TCut unlikeSignCut = "(fTrkQ1 < 0 && fTrkQ2 > 0) || (fTrkQ1 > 0 && fTrkQ2 < 0)";
-	//std::list<TCut> mCutList = {"", unlikeSignCut, ZNcut[i], ADcut[i], V0cut[i]};
-	std::list<TCut> mCutList = {"", ZNcut[i], ADcut[i], V0cut[i]};
+	std::list<TCut> mCutList = {"", unlikeSignCut, ZNcut[i], ADcut[i], V0cut[i]};
+	//std::list<TCut> mCutList = {"", ZNcut[i], ADcut[i], V0cut[i]};
 	//std::list<TCut> mCutList = {"", unlikeSignCut, ZNcut[i], ADcut[i]};
 	return mCutList;
 }

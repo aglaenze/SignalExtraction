@@ -45,6 +45,7 @@
 using namespace RooFit;
 
 Double_t mLimitPsi2s = 3.65;
+int ptBinNumber = 40;
 
 void AddModel(RooWorkspace* ws, std::string rootfilePath, std::string rootfilePathMC, std::string period, Double_t mMax) {
 	// Define 2D model
@@ -135,11 +136,12 @@ void AddModel(RooWorkspace* ws, std::string rootfilePath, std::string rootfilePa
 	 RooDataHist* ptHistDissociative = new RooDataHist("ptHistData","ptHistData", RooArgList(pt),hPtDissociative);
 	 RooHistPdf* ptDissociative = new RooHistPdf("ptDissociative", "ptDissociative", pt, *ptHistDissociative);
 	 */
-	/*
+/*
 	 // H1 formula (the first one, with the exp)
 	 RooRealVar bDiss("bDiss","bDiss", 0.323027, 0, 2);
 	 RooGenericPdf *ptDissociative = new RooGenericPdf("jpsiDiss","Dissociative jPsi PDF","(fTrkTrkPt*exp(-bDiss*(fTrkTrkPt**2)))", RooArgSet(pt,bDiss)) ;
-	 */
+*/
+	
 	// H1 formula (the second one, with the power law)
 	RooRealVar bDiss("bDiss","bDiss", 1.25, 0, 20);
 	RooRealVar nDiss("nDiss","nDiss", 6.2, 1, 20);
@@ -159,7 +161,8 @@ void AddModel(RooWorkspace* ws, std::string rootfilePath, std::string rootfilePa
 	// Background
 	// pt distribution from background is obtained with sPlot
 	TFile* fTemplates = new TFile(Form("%s/sPlotTemplates-%s.root", rootfilePath.c_str(), period.c_str()),"READ");
-	TH1F* hPtBackground = (TH1F*)fTemplates->Get("hPtBackground");
+	//TH1F* hPtBackground = (TH1F*)fTemplates->Get("hPtBackground");
+	TH1F* hPtBackground = (TH1F*)fTemplates->Get("hPtBkgSmooth");
 	RooDataHist* ptHistBackground = new RooDataHist("ptHistData","ptHistData", RooArgList(pt), hPtBackground);
 	RooHistPdf* ptBackground = new RooHistPdf("ptBackground", "ptBackground", pt, *ptHistBackground);
 	
@@ -238,7 +241,7 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	
 	// Define mass frame
 	RooPlot* mframe = m->frame(Title("Fit of invariant mass"));
-	data->plotOn(mframe);
+	data->plotOn(mframe, Binning(50));
 	fitModel->plotOn(mframe, Name("sum"), LineColor(kRed), LineWidth(1));
 	fitModel->plotOn(mframe,Name("pdfJpsiExclusive"),Components(*pdfJpsiExclusive),LineStyle(kDashed), LineColor(2), LineWidth(1));
 	fitModel->plotOn(mframe,Name("pdfJpsiDissociative"),Components(*pdfJpsiDissociative),LineStyle(kDashed), LineColor(3), LineWidth(1));
@@ -248,7 +251,7 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	
 	// Define pt frame
 	RooPlot* ptframe = pt->frame(Title("Fit of pt"));
-	data->plotOn(ptframe);
+	data->plotOn(ptframe, Binning(ptBinNumber));
 	fitModel->plotOn(ptframe, Name("sum"), LineColor(kRed), LineWidth(1));
 	fitModel->plotOn(ptframe,Name("pdfJpsiExclusive"),Components(*pdfJpsiExclusive),LineStyle(kDashed), LineColor(2), LineWidth(1));
 	fitModel->plotOn(ptframe,Name("pdfJpsiDissociative"),Components(*pdfJpsiDissociative),LineStyle(kDashed), LineColor(3), LineWidth(1));
@@ -289,8 +292,8 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	c1->cd(5);
 	gPad->SetLeftMargin(0.15) ;
 	//gPad->SetTopMargin(0.15) ;
-	data->plotOn(mframe, Binning(40));
-	fitModel->plotOn(mframe, Binning(40));
+	data->plotOn(mframe, Binning(50));
+	fitModel->plotOn(mframe, Binning(50));
 	RooHist* hpullM = mframe->pullHist();
 	hpullM->GetXaxis()->SetRangeUser(mMin, mMax);
 	hpullM->SetTitle("(data - fit)/#sigma for m distribution");
@@ -298,8 +301,8 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	
 	c1->cd(6);
 	gPad->SetLeftMargin(0.15) ;
-	data->plotOn(ptframe, Binning(40));
-	fitModel->plotOn(ptframe, Binning(40));
+	data->plotOn(ptframe, Binning(ptBinNumber));
+	fitModel->plotOn(ptframe, Binning(ptBinNumber));
 	RooHist* hpullPt = ptframe->pullHist();
 	hpullPt->GetXaxis()->SetRangeUser(ptMin, ptMax);
 	hpullPt->SetTitle("(data - fit)/#sigma for p_{T} distribution");
@@ -324,7 +327,7 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	
 	// Legend in a subcanvas
 	c1->cd(1);
-	TLegend* legend = new TLegend(0.3, 0.3, 0.9, 0.9);
+	TLegend* legend = new TLegend(0.1, 0.3, 0.9, 0.9);
 	legend->SetFillColor(kWhite);
 	legend->SetLineColor(kWhite);
 	//legend->AddEntry(ptframe->findObject("pdfkCohJpsiToMu"), "kCohJpsiToMu","L");
@@ -332,7 +335,7 @@ void MakePlots(RooWorkspace* ws, std::string period, bool useCuts, Double_t mMin
 	legend->AddEntry(ptframe->findObject("pdfJpsiDissociative"), "Dissociative J/Psi","L");
 	legend->AddEntry(ptframe->findObject("pdfJpsiGammaPb"), "#gamma + Pb","L");
 	if (mMax > mLimitPsi2s) legend->AddEntry(ptframe->findObject("pdfPsi2s"), "Psi(2s)","L");
-	legend->AddEntry(ptframe->findObject("pdfBackground"), "#gamma#gamma #rightarrow #mu^{+} #mu^{-}","L");
+	legend->AddEntry(ptframe->findObject("pdfBackground"), "#gamma#gamma #rightarrow #mu^{+} #mu^{-} + other background","L");
 	legend->AddEntry(ptframe->findObject("sum"),"sum","L");
 	legend->Draw();
 	

@@ -45,10 +45,21 @@
 
 using namespace RooFit;
 
-Double_t mMin = 2.6, mMax = 3.8;
-Double_t ptMin = 0., ptMax = 3.;
+Double_t mMin = 2.5, mMax = 4;
+Double_t ptMin = 0., ptMax = 3.5;
 
-Int_t nEventsSignal = 5000, nEventsBkg = 3000;
+Int_t nEventsSignal = 2000, nEventsBkg = 3000;
+
+template <typename T>
+bool contains(std::vector<T> & listOfElements, const T& element)
+{
+	// Find the iterator if element in list
+	auto it = std::find(listOfElements.begin(), listOfElements.end(), element);
+	//return if iterator points to end or not. It points to end then it means element
+	// does not exists in list
+	return it != listOfElements.end();
+}
+
 
 void AddModel(RooWorkspace* ws) {
 	// Define model
@@ -296,7 +307,7 @@ void MakePlots(RooWorkspace *ws, std::string period, bool drawPulls) {
 	hresid3->Draw("");
 	}
 
-	cv->SaveAs(Form("Plots/toyMC-splot-%s.pdf", period.c_str()));
+	cv->SaveAs(Form("Plots/toyMC-splot-%s-%d-%d.pdf", period.c_str(), nEventsBkg, nEventsSignal));
 
 }
 
@@ -327,6 +338,11 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 	const int nSignal = fSignalTree->GetEntries();
 	const int nBkg = fBkgTree->GetEntries();
 	
+	std::vector<int> signalIndices = {}, bkgIndices = {};
+	
+	std::cout << "There are " << nSignal << " signal entries" << std::endl;
+	std::cout << "There are " << nBkg << " background entries" << std::endl;
+	
 	
 	// new file
 	TFile *fAna = new TFile(Form("%s/toy_MC_%s.root", rootfilePathMC.c_str(), period.c_str()),"RECREATE");
@@ -343,13 +359,14 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 	tMixed->Branch("m", &mMixed, "m/D");
 	tMixed->Branch("pt", &ptMixed, "pt/D");
 	
-	int j = 0;
-	
+
 	//for (int i = 0; i<nSignal; i++) {
 	for (int i = 0; i<nEventsSignal; i++) {
-		j++;
-		fSignalTree->GetEntry(j);
-		if (j == nSignal) {std::cout << "not enough stats! bye" << std::endl; return false;}
+		int r = rand() % nSignal;
+		if (signalIndices.size() == nSignal) {std::cout << "not enough stats! bye" << std::endl; return false;}
+		if (contains(signalIndices,r)) {i--; continue;}
+		signalIndices.push_back(r);
+		fSignalTree->GetEntry(r);
 		if (mSignal < mMin || mSignal > mMax || ptSignal < ptMin || ptSignal > ptMax) {
 			std::cout << mSignal << std::endl;
 			std::cout << "event (signal) ignored because not in the right range of pt or m" << std::endl;
@@ -367,13 +384,14 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 		 histSignalPt->Fill(ptSignal);
 		 */
 	}
-	
-	j=0;
+
 	//for (int i = 0; i<nBkg; i++) {
 	for (int i = 0; i<nEventsBkg; i++) {
-		j++;
-		fBkgTree->GetEntry(j);
-		if (j == nBkg) {std::cout << "not enough stats! bye" << std::endl; return false;}
+		int r = rand() % nBkg;
+		if (bkgIndices.size() == nBkg) {std::cout << "not enough stats! bye" << std::endl; return false;}
+		if (contains(bkgIndices,r)) {i--; continue;}
+		bkgIndices.push_back(r);
+		fBkgTree->GetEntry(r);
 		if (mBkg < mMin || mBkg > mMax || ptBkg < ptMin || ptBkg > ptMax) {
 			std::cout << mBkg << std::endl;
 			std::cout << "event (background) ignored because not in the right range of pt or m" << std::endl;
