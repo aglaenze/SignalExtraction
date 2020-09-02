@@ -5,3 +5,6 @@ plot*
 *.so
 
 *test*
+*txt
+*.pdf
+

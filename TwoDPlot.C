@@ -136,12 +136,12 @@ void AddModel(RooWorkspace* ws, std::string rootfilePath, std::string rootfilePa
 	 RooDataHist* ptHistDissociative = new RooDataHist("ptHistData","ptHistData", RooArgList(pt),hPtDissociative);
 	 RooHistPdf* ptDissociative = new RooHistPdf("ptDissociative", "ptDissociative", pt, *ptHistDissociative);
 	 */
-/*
+
+	/*
 	 // H1 formula (the first one, with the exp)
 	 RooRealVar bDiss("bDiss","bDiss", 0.323027, 0, 2);
 	 RooGenericPdf *ptDissociative = new RooGenericPdf("jpsiDiss","Dissociative jPsi PDF","(fTrkTrkPt*exp(-bDiss*(fTrkTrkPt**2)))", RooArgSet(pt,bDiss)) ;
-*/
-	
+	 */
 	// H1 formula (the second one, with the power law)
 	RooRealVar bDiss("bDiss","bDiss", 1.25, 0, 20);
 	RooRealVar nDiss("nDiss","nDiss", 6.2, 1, 20);

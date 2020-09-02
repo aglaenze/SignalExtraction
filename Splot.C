@@ -47,7 +47,7 @@
 using namespace RooFit;
 
 Double_t mLimitPsi2s = 3.65;
-int ptBinNumber = 40;
+int ptBinNumber = 70;
 
 void AddModel(RooWorkspace* ws, std::string period, Double_t mMax) {
 	// Define model
@@ -294,7 +294,7 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	frame->SetTitle("Fit to model to discriminating variable");
 	double yMax0 = frame->GetMaximum();
 	double xPos = (mMin+mMax+0.2)/2;
-	if (mMax < mLimitPsi2s) xPos = 2.6;
+	if (mMax < mLimitPsi2s) xPos = mMin+(mMax-mMin)/3;
 	TText* txt0 = new TText(xPos,0.55*yMax0,Form("%.1f J/Psi", jPsiYield->getVal()));
 	//txt3->SetTextSize(0.05) ;
 	frame->addObject(txt0) ;
@@ -459,30 +459,44 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	TFile* fNewTemplates = new TFile(Form("%s/sPlotTemplates-%s.root", rootfilePath.c_str(), period.c_str()),"RECREATE");
 	if (diss) {
 		RooAbsPdf* jpsiDiss = ws->pdf("jpsiDiss");
-		TH1* hPtDissociative = jpsiDiss->createHistogram("hPtDissociative",*pt, Binning(ptBinNumber, 0, 4)) ;
+		TH1* hPtDissociative = jpsiDiss->createHistogram("hPtDissociative",*pt, Binning(ptBinNumber, 0, ptMax)) ;
 		hPtDissociative->Write();
 	}
-	TH1* hPtExclusive = jpsiExc->createHistogram("hPtExclusive",*pt, Binning(ptBinNumber, 0, 4)) ;
+	TH1* hPtExclusive = jpsiExc->createHistogram("hPtExclusive",*pt, Binning(ptBinNumber, 0, ptMax)) ;
 	hPtExclusive->Write();
-	TH1* hPtBackground = dataw_bkg->createHistogram("hPtBackground",*pt, Binning(ptBinNumber, 0, 4)) ;
+	TH1* hPtBackground = dataw_bkg->createHistogram("hPtBackground",*pt, Binning(ptBinNumber, 0, ptMax)) ;
 	hPtBackground->Write();
 	
-	// Create a smooth histogram (the size of the smooting depends on pt, should be logarithmic so that the smoothing is a lot more agressive for hifgh pt)
-	TH1* hPtBkgSmooth = new TH1F("hPtBkgSmooth", "smoothed background pt template", ptBinNumber, 0, 4);
+	// Create a smooth histogram (the size of the smooting depends on pt, should be logarithmic so that the smoothing is a lot more agressive for high pt)
+	TH1* hPtBkgSmooth = new TH1F("hPtBkgSmooth", "smoothed background pt template", ptBinNumber, 0, ptMax);
+	double negValue = -10;	// in case the value is negative, pb log(neg) so set log to this negvalue
 	for (int k = 0; k<ptBinNumber; k++) {
 		int binNum = k+1;
-		double smoothVal = hPtBackground->GetBinContent(binNum);
-		double size = pow(binNum/3.,2);	// number of bins to smooth
-		if (size > 10) size = 10.;
+		double smoothVal = 0;
 		int nSmoothBins = 1;
+		if (hPtBackground->GetBinContent(binNum) > 0) {smoothVal = TMath::Log(hPtBackground->GetBinContent(binNum));}
+		else smoothVal = -10;	// by default say there's 10^-2 background events (originally) in this bin
+		double size = binNum*0.8;	// number of bins to smooth
+		if (size > 15) size = 15.;
 		for (int j = 1; j < (int)size; j++ ) {
-			if (binNum-j > 0) {smoothVal+= hPtBackground->GetBinContent(binNum-j); nSmoothBins++;}
-			if (binNum+j < ptBinNumber) {smoothVal+= hPtBackground->GetBinContent(binNum+j); nSmoothBins++;}
+			if (binNum-j > 0) {
+				nSmoothBins++;
+				double neighbourVal = hPtBackground->GetBinContent(binNum-j);
+				if (neighbourVal>0) {smoothVal+= TMath::Log(neighbourVal);}
+				else smoothVal+= negValue;
+			}
+			if (binNum+j < ptBinNumber) {
+				nSmoothBins++;
+				double neighbourVal = hPtBackground->GetBinContent(binNum+j);
+				if (neighbourVal>0) {smoothVal+= TMath::Log(hPtBackground->GetBinContent(binNum+j));}
+				else smoothVal+= negValue;
+			}
 		}
 		smoothVal /= (double)nSmoothBins;
+		smoothVal = TMath::Exp(smoothVal);
 		Double_t x = hPtBackground->GetXaxis()->GetBinCenter(binNum);
 		hPtBkgSmooth->Fill(x, smoothVal);
-		std::cout << x << " " << smoothVal << std::endl;
+		//std::cout << x << " " << smoothVal << std::endl;
 		
 	}
 	fNewTemplates->cd();
@@ -494,23 +508,12 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 //____________________________________
 void DrawWeights(RooWorkspace *ws, std::string rootfilePath, std::string period, bool useCuts, bool diss, Double_t mMin, Double_t mMax, Double_t ptMin, Double_t ptMax){
 	
-	//make some plots
-	TCanvas* cv = new TCanvas("sweights","sweights",800,800) ;
-	cv->Divide(2,2);
 	
 	//get what we need of the workspace
 	RooRealVar* m = ws->var("fTrkTrkM");
 	RooRealVar* pt = ws->var("fTrkTrkPt");
 	
 	RooDataSet* sData = (RooDataSet*) ws->data("dataWithSWeights");
-	
-	/*
-	// Histograms to fill
-	TH1* hWeightsMJpsi = new TH1F("hWeightsMJpsi", "Weights = f(m) for J/Psi", 100, mMin, mMax);
-	TH1* hWeightsPtJpsi = new TH1F("hWeightsPtJpsi", "Weights = f(pt) for J/Psi", 100, ptMin, ptMax);
-	TH1* hWeightsMBkg = new TH1F("hWeightsMBkg", "Weights = f(m) for background events", 100, mMin, mMax);
-	TH1* hWeightsPtBkg = new TH1F("hWeightsPtBkg", "Weights = f(pt) for background events", 100, ptMin, ptMax);
-	 */
 	
 	//std::cout << std::endl << std::endl << std::endl << std::endl;
 	const int nEntries = (int) sData->sumEntries();
@@ -524,48 +527,75 @@ void DrawWeights(RooWorkspace *ws, std::string rootfilePath, std::string period,
 		jPsiWeight[i] = sData->get(i)->getRealValue("fsigJpsi_sw");
 		bkgWeight[i] = sData->get(i)->getRealValue("fbkg_sw");
 		
-		/*
-		hWeightsMJpsi->Fill(massForWeights, jPsiWeight);
-		hWeightsPtJpsi->Fill(ptForWeights, jPsiWeight);
-		hWeightsMBkg->Fill(massForWeights, bkgWeight);
-		hWeightsPtBkg->Fill(ptForWeights, bkgWeight);
-		 */
-		
-		//sData->GetSDataSet()->get(i)->writeToStream();
-		//sData->get(i)->writeToFile("test.txt");
-		//std::cout << "\n\nTest "<< sData->get(i)->getRealValue("fTrkTrkM") << std::endl;
 	}
 	//std::cout << std::endl << std::endl << std::endl << std::endl;
 	
-	// TGraphs
+	// TGraphs of sWeights = f(m) or sWeights = f(pt)
 	TGraph* gWeightsMJpsi = new TGraph(nEntries,massForWeights, jPsiWeight);
 	TGraph* gWeightsPtJpsi = new TGraph(nEntries,ptForWeights, jPsiWeight);
 	TGraph* gWeightsMBkg = new TGraph(nEntries,massForWeights, bkgWeight);
 	TGraph* gWeightsPtBkg = new TGraph(nEntries,ptForWeights, bkgWeight);
-	gWeightsMJpsi->SetTitle("Weights = f(m) for J/Psi");
-	gWeightsPtJpsi->SetTitle("Weights = f(pt) for J/Psi");
-	gWeightsMBkg->SetTitle("Weights = f(m) for background events");
-	gWeightsPtBkg->SetTitle("Weights = f(pt) for background events");
+	
+	gWeightsMJpsi->SetTitle("JPsi sWeights = f(m)");
+	gWeightsPtJpsi->SetTitle("JPsi sWeights = f(pt)");
+	gWeightsMBkg->SetTitle("Background sWeights = f(m)");
+	gWeightsPtBkg->SetTitle("Background sWeights = f(pt)");
+	
+	gWeightsMJpsi->GetXaxis()->SetTitle("m");
+	gWeightsPtJpsi->GetXaxis()->SetTitle("pt");
+	gWeightsMBkg->GetXaxis()->SetTitle("m");
+	gWeightsPtBkg->GetXaxis()->SetTitle("pt");
+	
+	gWeightsMJpsi->GetYaxis()->SetTitle("J/Psi sWeights");
+	gWeightsPtJpsi->GetYaxis()->SetTitle("J/Psi sWeights");
+	gWeightsMBkg->GetYaxis()->SetTitle("Bkg sWeights");
+	gWeightsPtBkg->GetYaxis()->SetTitle("Bkg sWeights");
+	
+	TCanvas* cv = new TCanvas("sweights","sweights", 800, 1200) ;
+	cv->Divide(2,3);
 	
 	cv->cd(1);
-	//hWeightsMJpsi->Draw("hist");
+	gPad->SetLeftMargin(0.2);
 	gWeightsMJpsi->Draw("A*");
+	
 	cv->cd(2);
-	//hWeightsPtJpsi->Draw("hist");
+	gPad->SetLeftMargin(0.2);
 	gWeightsPtJpsi->Draw("A*");
+	
 	cv->cd(3);
-	//hWeightsMBkg->Draw("hist");
+	gPad->SetLeftMargin(0.2);
 	gWeightsMBkg->Draw("A*");
+	
 	cv->cd(4);
-	//hWeightsPtBkg->Draw("hist");
+	gPad->SetLeftMargin(0.2);
 	gWeightsPtBkg->Draw("A*");
 	
+	// 2d histograms
+	TH2F* hWeightsBkg2d = new TH2F("hWeightsBkg2d", "Background sWeights)", 50, mMin, mMax, 100, ptMin, 4.5);
+	TH2F* hWeightsJpsi2d = new TH2F("hWeightsJpsi2d", "J/Psi sWeights", 50, mMin, mMax, 100, ptMin, 4.5);
+	for (int i = 0; i<nEntries; i++) {
+		hWeightsBkg2d->Fill(massForWeights[i], ptForWeights[i], bkgWeight[i]);
+		hWeightsJpsi2d->Fill(massForWeights[i], ptForWeights[i], jPsiWeight[i]);
+	}
+	cv->cd(5);
+	gPad->SetLeftMargin(0.2);
+	hWeightsBkg2d->GetXaxis()->SetTitle("Mass");
+	hWeightsBkg2d->GetYaxis()->SetTitle("Pt");
+	//hWeightsBkg2d->Draw("CONTZ");
+	hWeightsBkg2d->Draw("COLZ");
+	
+	cv->cd(6);
+	gPad->SetLeftMargin(0.2);
+	hWeightsJpsi2d->GetXaxis()->SetTitle("Mass");
+	hWeightsJpsi2d->GetYaxis()->SetTitle("Pt");
+	hWeightsJpsi2d->Draw("COLZ");
 	
 	
-	 // Save plots
-	 std::string cutType = "";
-	 if (!useCuts) cutType = "-nocuts";
-	 cv->SaveAs(Form("Plots/Splot-weights-%s%s-%.1f-%.1f.pdf", period.c_str(), cutType.c_str(), mMin, mMax));
+	
+	// Save plots
+	std::string cutType = "";
+	if (!useCuts) cutType = "-nocuts";
+	cv->SaveAs(Form("Plots/Splot-weights-%s%s-%.1f-%.1f.pdf", period.c_str(), cutType.c_str(), mMin, mMax));
 }
 
 void Splot(std::string rootfilePath = "", std::vector<std::string> periods = {"LHC16r", "LHC16s"}, Double_t mMin = 2., Double_t mMax = 3.5, Double_t ptMin = 0., Double_t ptMax = 3.5, bool useCuts = true) {

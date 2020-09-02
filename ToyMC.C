@@ -2,6 +2,7 @@
 #include <fstream>
 #include <dirent.h>
 #include <string>
+#include <stdio.h>
 #include <cmath>
 #include <TROOT.h>
 
@@ -24,6 +25,7 @@
 #include "TTree.h"
 #include "TBranch.h"
 #include "TBasket.h"
+#include "Riostream.h"
 
 #include "RooRealVar.h"
 #include "RooStats/SPlot.h"
@@ -44,11 +46,22 @@
 #include "RooPlot.h"
 
 using namespace RooFit;
+using namespace std;
 
-Double_t mMin = 2.5, mMax = 4;
-Double_t ptMin = 0., ptMax = 3.5;
+Double_t mMin = 2.6, mMax = 3.5;
+Double_t ptMin = 0., ptMax = 8;
+int ptBinNumber = 70;
 
-Int_t nEventsSignal = 2000, nEventsBkg = 3000;
+
+std::map<std::string, Int_t> nEventsSignal, nEventsBkg;
+
+void InitiateNumbers(std::map<std::string, Int_t> &nEventsSignal, std::map<std::string, Int_t> &nEventsBkg) {
+	nEventsSignal["LHC16r"] = 2155;
+	nEventsSignal["LHC16s"] = 856;
+	nEventsBkg["LHC16r"] = 389;
+	nEventsBkg["LHC16s"] = 49;
+}
+
 
 template <typename T>
 bool contains(std::vector<T> & listOfElements, const T& element)
@@ -65,7 +78,7 @@ void AddModel(RooWorkspace* ws) {
 	// Define model
 	
 	//Crystal ball for the J/psi
-
+	
 	RooRealVar m = *ws->var("m");
 	
 	RooRealVar mean_jpsi("mean_jpsi","mean_jpsi",3.1,2.9,3.2);
@@ -79,8 +92,8 @@ void AddModel(RooWorkspace* ws) {
 	RooExponential *bkg = new RooExponential("exp","exp",m,a1);
 	
 	//RooRealVar fsig("fsig","signalPhi",0.1,0.,1.);
-	RooRealVar fsigJPsi("fsigJPsi","signalJPsi",5.e3,1.e3,1.e5);
-	RooRealVar fbkg("fbkg","fbkg",5.e3,1.e3,1.e5);
+	RooRealVar fsigJPsi("fsigJPsi","signalJPsi",5.e3,1.e1,1.e5);
+	RooRealVar fbkg("fbkg","fbkg",5.e3,1.e1,1.e5);
 	
 	RooAbsPdf* model = new RooAddPdf("mfit", "mfit", RooArgList(*jpsi, *bkg), RooArgList(fsigJPsi, fbkg), kFALSE);
 	
@@ -108,13 +121,15 @@ void GetPtHistMC(RooWorkspace* ws, std::string rootfilePathMC, std::string perio
 	
 	ws->import(*ptSignalPdf);
 	ws->import(*ptBkgPdf);
+	
 }
 
 void DoSPlot(RooWorkspace* ws) {
+	
 	RooAbsPdf* model = ws->pdf("mfit");
+	RooDataSet* data = (RooDataSet*) ws->data("data");
 	RooRealVar* jPsiYield = ws->var("fsigJPsi");
 	RooRealVar* bkgYield = ws->var("fbkg");
-	RooDataSet* data = (RooDataSet*) ws->data("data");
 	
 	model->fitTo(*data, Extended(), Minos(true), Strategy(2));
 	
@@ -167,7 +182,7 @@ void DoSPlot(RooWorkspace* ws) {
 }
 
 
-void MakePlots(RooWorkspace *ws, std::string period, bool drawPulls) {
+void MakePlots(RooWorkspace *ws, std::string rootfilePathMC, std::string period, bool drawPulls) {
 	
 	//make some plots
 	TCanvas* cv = new TCanvas("splot","splot",900,900) ;
@@ -186,7 +201,7 @@ void MakePlots(RooWorkspace *ws, std::string period, bool drawPulls) {
 	RooRealVar* pt = ws->var("pt");
 	
 	RooDataSet* data = (RooDataSet*) ws->data("dataWithSWeights");
-
+	
 	// First draw mass fit
 	cv->cd(1);
 	gPad->SetLeftMargin(0.15);
@@ -200,12 +215,28 @@ void MakePlots(RooWorkspace *ws, std::string period, bool drawPulls) {
 	model->plotOn(frame, Components(*bkgModel), LineStyle(kDashed), LineColor(kGreen));
 	frame->SetTitle("Fit to model to discriminating variable");
 	double yMax0 = frame->GetMaximum();
-	TText* txt0 = new TText((mMax+mMin+0.1)/2,0.6*yMax0,Form("%.1f J/Psi", jPsiYield->getVal()));
-	TText* txt1 = new TText((mMax+mMin+0.1)/2,0.5*yMax0,Form("%.1f Bkg", bkgYield->getVal()));
+	double x0 = mMin+(mMax-mMin)*0.2;
+	TText* txt0 = new TText(x0,0.6*yMax0,Form("%.1f J/Psi", jPsiYield->getVal()));
+	TText* txt1 = new TText(x0,0.5*yMax0,Form("%.1f Bkg", bkgYield->getVal()));
 	//txt3->SetTextSize(0.05) ;
 	frame->addObject(txt0) ;
 	frame->addObject(txt1) ;
 	frame->Draw();
+	
+	// Ecrire les valeurs dans un fichier
+	
+	string const nomFichier(Form("Numbers-%s.txt", period.c_str()));
+	ofstream monFlux(nomFichier.c_str(), ios::app);
+	
+	if(monFlux)
+	{
+		monFlux << jPsiYield->getVal() << " ";
+		monFlux << bkgYield->getVal() << endl;
+	}
+	else
+	{
+		cout << "File not opened" << std::endl;
+	}
 	
 	
 	// Get weighted data
@@ -213,15 +244,15 @@ void MakePlots(RooWorkspace *ws, std::string period, bool drawPulls) {
 	// yield + "_sw".
 	RooDataSet *dataw_jpsi = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),0,"fsigJPsi_sw") ;
 	RooDataSet *dataw_bkg = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),0,"fbkg_sw") ;
-
+	
 	// Extract pt templates to compare them with reconstructed data
-	RooRealVar yieldSignal("yieldSignal","yieldSignal",nEventsSignal);
-	RooRealVar yieldBkg("yieldBkg","yieldBkg",nEventsBkg);
+	RooRealVar yieldSignal("yieldSignal","yieldSignal",nEventsSignal[period]);
+	RooRealVar yieldBkg("yieldBkg","yieldBkg",nEventsBkg[period]);
 	RooAbsPdf* ptSignalModel = new RooAddPdf("ptSignalMC", "ptSignalMC", RooArgList(*ptSignalPdf), RooArgList(yieldSignal), kFALSE);
 	RooAbsPdf* ptBkgModel = new RooAddPdf("ptBkgMC", "ptBkgMC", RooArgList(*ptBkgPdf), RooArgList(yieldBkg), kFALSE);
 	//ptSignalModel->fitTo(*dataw_jpsi, Extended(), Minos(true), Strategy(2));
 	//ptBkgModel->fitTo(*dataw_bkg, Extended(), Minos(true), Strategy(2));
-
+	
 	// Draw pt with weights
 	// For signal
 	cv->cd(2);
@@ -292,23 +323,79 @@ void MakePlots(RooWorkspace *ws, std::string period, bool drawPulls) {
 	
 	// Draw pull histograms = data-fit
 	if (drawPulls) {
-	cv->cd(8);
-	gPad->SetLeftMargin(0.15);
-	RooHist* hresid2 = frame2->residHist();
-	hresid2->GetXaxis()->SetRangeUser(ptMin, ptMax);
-	hresid2->SetTitle("Residuals (reconstructed - original) of J/#Psi p_{T}");
-	hresid2->Draw("");
-	
-	cv->cd(9);
-	gPad->SetLeftMargin(0.15);
-	RooHist* hresid3 = frame3->residHist();
-	hresid3->GetXaxis()->SetRangeUser(ptMin, ptMax);
-	hresid3->SetTitle("Residuals (reconstructed - original) of bkg p_{T}");
-	hresid3->Draw("");
+		cv->cd(8);
+		gPad->SetLeftMargin(0.15);
+		RooHist* hresid2 = frame2->residHist();
+		hresid2->GetXaxis()->SetRangeUser(ptMin, ptMax);
+		hresid2->SetTitle("Residuals (reconstructed - original) of J/#Psi p_{T}");
+		hresid2->Draw("");
+		
+		cv->cd(9);
+		gPad->SetLeftMargin(0.15);
+		RooHist* hresid3 = frame3->residHist();
+		hresid3->GetXaxis()->SetRangeUser(ptMin, ptMax);
+		hresid3->SetTitle("Residuals (reconstructed - original) of bkg p_{T}");
+		hresid3->Draw("");
 	}
-
-	cv->SaveAs(Form("Plots/toyMC-splot-%s-%d-%d.pdf", period.c_str(), nEventsBkg, nEventsSignal));
-
+	
+	cv->SaveAs(Form("Plots/toyMC-splot-%s-%d-%d.pdf", period.c_str(), nEventsBkg[period], nEventsSignal[period]));
+	
+	
+	// Now save pt shapes
+	TFile* fNewTemplates = new TFile(Form("%s/sPlotTemplates-%s.root", rootfilePathMC.c_str(), period.c_str()),"RECREATE");
+	
+	TH1* hPtExclusive = dataw_jpsi->createHistogram("hPtExclusive",*pt, Binning(ptBinNumber, 0, ptMax)) ;
+	hPtExclusive->Write();
+	
+	// Import original pt shape
+	TFile *fSimu = new TFile(Form("%s/toy_MC_%s.root", rootfilePathMC.c_str(), period.c_str()),"READ");
+	TTree* tBkg = (TTree*)fSimu->Get("tBkg");
+	TH1F* hPtBkgOriginal = new TH1F("hPtBkgOriginal", "hPtBkgOriginal", 100, 0, 4);
+	tBkg->Draw("pt>>hPtBkgOriginal");
+	
+	fNewTemplates->cd();
+	hPtBkgOriginal->Write();
+	TH1* hPtBackground = dataw_bkg->createHistogram("hPtBackground",*pt, Binning(ptBinNumber, 0, ptMax)) ;
+	hPtBackground->Write();
+	
+	// Create a smooth histogram (the size of the smooting depends on pt, should be logarithmic so that the smoothing is a lot more agressive for high pt)
+	TH1* hPtBkgSmooth = new TH1F("hPtBkgSmooth", "smoothed background pt template", ptBinNumber, 0, ptMax);
+	double negValue = -10;	// in case the value is negative, pb log(neg) so set log to this negvalue
+	for (int k = 0; k<ptBinNumber; k++) {
+		int binNum = k+1;
+		double smoothVal = 0;
+		int nSmoothBins = 1;
+		if (hPtBackground->GetBinContent(binNum) > 0) {smoothVal = TMath::Log(hPtBackground->GetBinContent(binNum));}
+		else smoothVal = -10;	// by default say there's 10^-2 background events (originally) in this bin
+		double size = binNum*0.8;	// number of bins to smooth
+		if (size > 15) size = 15.;
+		for (int j = 1; j < (int)size; j++ ) {
+			if (binNum-j > 0) {
+				nSmoothBins++;
+				double neighbourVal = hPtBackground->GetBinContent(binNum-j);
+				if (neighbourVal>0) {smoothVal+= TMath::Log(neighbourVal);}
+				else smoothVal+= negValue;
+			}
+			if (binNum+j < ptBinNumber) {
+				nSmoothBins++;
+				double neighbourVal = hPtBackground->GetBinContent(binNum+j);
+				if (neighbourVal>0) {smoothVal+= TMath::Log(hPtBackground->GetBinContent(binNum+j));}
+				else smoothVal+= negValue;
+			}
+		}
+		smoothVal /= (double)nSmoothBins;
+		smoothVal = TMath::Exp(smoothVal);
+		Double_t x = hPtBackground->GetXaxis()->GetBinCenter(binNum);
+		hPtBkgSmooth->Fill(x, smoothVal);
+		//std::cout << x << " " << smoothVal << std::endl;
+		
+	}
+	
+	fNewTemplates->cd();
+	hPtBkgSmooth->Write();
+	fNewTemplates->Close();
+	fSimu->Close();
+	
 }
 
 
@@ -317,7 +404,7 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 	
 	gStyle->SetOptStat(0);
 	
-	// 1ere étape : générer des "fausses" données en utilisant les MC
+	// 1ere étape : générer des "fausses" données en utilisant les MC, les enregistrer dans des histogrammes
 	
 	// MC files
 	TFile *fSignal = new TFile(Form("%s/AnalysisResults_%s_MC_kIncohJpsiToMu.root", rootfilePathMC.c_str(), period.c_str()),"READ");
@@ -359,17 +446,19 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 	tMixed->Branch("m", &mMixed, "m/D");
 	tMixed->Branch("pt", &ptMixed, "pt/D");
 	
-
+	
 	//for (int i = 0; i<nSignal; i++) {
-	for (int i = 0; i<nEventsSignal; i++) {
+	int nPbSig = 0;
+	for (int i = 0; i<nEventsSignal[period]; i++) {
 		int r = rand() % nSignal;
-		if (signalIndices.size() == nSignal) {std::cout << "not enough stats! bye" << std::endl; return false;}
+		if ((int)signalIndices.size() == nSignal) {std::cout << "not enough stats! bye" << std::endl; return false;}
 		if (contains(signalIndices,r)) {i--; continue;}
 		signalIndices.push_back(r);
 		fSignalTree->GetEntry(r);
 		if (mSignal < mMin || mSignal > mMax || ptSignal < ptMin || ptSignal > ptMax) {
-			std::cout << mSignal << std::endl;
-			std::cout << "event (signal) ignored because not in the right range of pt or m" << std::endl;
+			nPbSig++;
+			//std::cout << mSignal << std::endl;
+			//std::cout << "event (signal) ignored because not in the right range of pt or m" << std::endl;
 			i--;
 			continue;}
 		mMixed = mSignal;
@@ -384,17 +473,19 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 		 histSignalPt->Fill(ptSignal);
 		 */
 	}
-
+	
+	int nPbBkg = 0;
 	//for (int i = 0; i<nBkg; i++) {
-	for (int i = 0; i<nEventsBkg; i++) {
+	for (int i = 0; i<nEventsBkg[period]; i++) {
 		int r = rand() % nBkg;
-		if (bkgIndices.size() == nBkg) {std::cout << "not enough stats! bye" << std::endl; return false;}
+		if ((int)bkgIndices.size() == nBkg) {std::cout << "not enough stats! bye" << std::endl; return false;}
 		if (contains(bkgIndices,r)) {i--; continue;}
 		bkgIndices.push_back(r);
 		fBkgTree->GetEntry(r);
 		if (mBkg < mMin || mBkg > mMax || ptBkg < ptMin || ptBkg > ptMax) {
-			std::cout << mBkg << std::endl;
-			std::cout << "event (background) ignored because not in the right range of pt or m" << std::endl;
+			nPbBkg++;
+			//std::cout << mBkg << std::endl;
+			//std::cout << "event (background) ignored because not in the right range of pt or m" << std::endl;
 			i--;
 			continue;}
 		mMixed = mBkg;
@@ -408,6 +499,9 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 		tBkg->Fill();
 		tMixed->Fill();
 	}
+	
+	std::cout << nPbSig << " signal events ignored because not in the right range of pt or m" << std::endl;
+	std::cout << nPbBkg << " background events ignored because not in the right range of pt or m" << std::endl;
 	
 	if (draw) {
 		TCanvas* cv = new TCanvas("ToyMC","Toy MC",600,300) ;
@@ -451,6 +545,7 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 	tBkg->Write();
 	tMixed->Write();
 	fAna->Close();
+	
 	return true;
 }
 
@@ -459,6 +554,8 @@ void ToyMC(std::string rootfilePathMC, bool drawPulls) {
 	
 	std::vector <std::string> periods = {"LHC16r", "LHC16s"};
 	const int nPeriods = periods.size();
+	
+	InitiateNumbers(nEventsSignal, nEventsBkg);
 	
 	for (int k = 0; k<nPeriods; k++) {
 		std::string period = periods[k];
@@ -479,7 +576,7 @@ void ToyMC(std::string rootfilePathMC, bool drawPulls) {
 		RooDataSet* data = new RooDataSet("data","data",variables,Import(*t));
 		wspace->import(*data, Rename("data"));
 		data->Print();
-
+		
 		// Add model for m distribution
 		AddModel(wspace);
 		
@@ -488,7 +585,7 @@ void ToyMC(std::string rootfilePathMC, bool drawPulls) {
 		DoSPlot(wspace);
 		
 		GetPtHistMC(wspace, rootfilePathMC, period);
-		MakePlots(wspace, period, drawPulls);
+		MakePlots(wspace, rootfilePathMC, period, drawPulls);
 		
 		//cleanup
 		delete wspace;
