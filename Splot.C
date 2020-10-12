@@ -47,7 +47,6 @@
 using namespace RooFit;
 
 Double_t mLimitPsi2s = 3.65;
-int ptBinNumber = 70;
 
 void AddModel(RooWorkspace* ws, std::string period, Double_t mMax) {
 	// Define model
@@ -263,8 +262,10 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	
 	bool drawMC = false;
 	
+	int ptBinNumber = int(10*ptMax);
+	
 	//make some plots
-	TCanvas* cv = new TCanvas("splot","splot", 800,800) ;
+	TCanvas* cv = new TCanvas("splot","splot", 600,800) ;
 	cv->Divide(2,3);
 	
 	//get what we need of the workspace
@@ -297,7 +298,7 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	if (mMax < mLimitPsi2s) xPos = mMin+(mMax-mMin)/3;
 	TText* txt0 = new TText(xPos,0.55*yMax0,Form("%.1f J/Psi", jPsiYield->getVal()));
 	//txt3->SetTextSize(0.05) ;
-	frame->addObject(txt0) ;
+	//frame->addObject(txt0) ;
 	if (mMax > mLimitPsi2s) {
 		RooAbsPdf* psi2sModel = ws->pdf("psi2s");
 		model->plotOn(frame, Components(*psi2sModel), LineStyle(kDashed), LineColor(kOrange));
@@ -477,7 +478,7 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 		if (hPtBackground->GetBinContent(binNum) > 0) {smoothVal = TMath::Log(hPtBackground->GetBinContent(binNum));}
 		else smoothVal = -10;	// by default say there's 10^-2 background events (originally) in this bin
 		double size = binNum*0.8;	// number of bins to smooth
-		if (size > 15) size = 15.;
+		if (size > 10) size = 10.;
 		for (int j = 1; j < (int)size; j++ ) {
 			if (binNum-j > 0) {
 				nSmoothBins++;
@@ -501,7 +502,16 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	}
 	fNewTemplates->cd();
 	hPtBkgSmooth->Write();
+	//fNewTemplates->Close();
+	
+	TCanvas* cv3 = new TCanvas();
+	hPtBackground->Draw("hist");
+	hPtBkgSmooth->SetLineColor(kRed);
+	hPtBkgSmooth->Draw("hist same");
+	cv3->SaveAs(Form("Plots/pt-splotsmooth-%s.pdf", period.c_str()));
+	
 	fNewTemplates->Close();
+	
 	
 }
 

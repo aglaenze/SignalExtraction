@@ -46,7 +46,7 @@ using namespace std;
 
 Double_t mMin = 2.6, mMax = 3.5;
 Double_t ptMin = 0., ptMax = 8;
-int ptBinNumber = 70;
+int ptBinNumber = int(10*ptMax);
 
 void ImportDataSet(RooWorkspace* ws, TTree* tree) {
 	// import data
@@ -93,7 +93,9 @@ void AddModel(RooWorkspace* ws, std::string rootfilePathMC, std::string period, 
 														n_jpsi_L, alpha_jpsi_R, n_jpsi_R);
 	// Finally background
 	//Exponential background for mass
-	RooRealVar a1("a1","a1",-2,-10,-0.5);
+	//RooRealVar a1("a1","a1",-2,-10,-0.5);
+	//RooRealVar a1("a1","a1",0);
+	RooRealVar a1("a1","a1", 1, 0, 3);
 	RooExponential bkg("exp","exp",m,a1);
 	
 	// Now pt PDFs
@@ -114,7 +116,8 @@ void AddModel(RooWorkspace* ws, std::string rootfilePathMC, std::string period, 
 	else hPtBackground = (TH1F*)fTemplates->Get("hPtBkgSmooth");
 	RooDataHist* ptHistBackground = new RooDataHist("ptHistData","ptHistData", RooArgList(pt), hPtBackground);
 	RooHistPdf* ptBackground = new RooHistPdf("ptBackground", "ptBackground", pt, *ptHistBackground);
-
+	//RooExponential* ptBackground = new RooExponential("exp","exp",pt,a1);
+	
 	// Last step:
 	// Product fit(m) x fit(pt)
 	RooProdPdf* pdfJpsiExclusive = new RooProdPdf("pdfJpsiExclusive","jpsi*ptkIncohJpsiToMu",RooArgList(*jpsi,*ptPdfExclusive));
@@ -125,10 +128,10 @@ void AddModel(RooWorkspace* ws, std::string rootfilePathMC, std::string period, 
 	RooRealVar yieldBkg("yieldBkg","yieldBkg",500,0.,2.e4);
 	
 	// Assemble all components in sets
-
+	
 	RooArgList* pdfList = new RooArgList(*pdfJpsiExclusive, *pdfBackground);
 	RooArgList yieldList = RooArgList(yieldJpsiExclusive, yieldBkg);
-
+	
 	// Create fit model
 	RooAbsPdf* fitModel;
 	fitModel = new RooAddPdf("model", "model", *pdfList, yieldList, kFALSE);
@@ -136,7 +139,11 @@ void AddModel(RooWorkspace* ws, std::string rootfilePathMC, std::string period, 
 	ws->import(*fitModel);
 }
 
-void MakePlots(RooWorkspace* ws, std::string period, bool drawPulls, bool logScale) {
+void MakePlots(RooWorkspace* ws, std::string period, bool drawPulls, bool logScale, bool useOriginalPt, bool write) {
+	
+	std::string suffix = "";
+	if (useOriginalPt) suffix = "original";
+	else suffix = "extracted";
 	
 	//get what we need of the workspace
 	RooRealVar* m = ws->var("m");
@@ -155,125 +162,124 @@ void MakePlots(RooWorkspace* ws, std::string period, bool drawPulls, bool logSca
 	
 	RooRealVar* bExc = ws->var("bExc");
 	
-	// Define mass frame
-	RooPlot* mframe = m->frame(Title("Fit of invariant mass"));
-	data->plotOn(mframe, Binning(50));
-	fitModel->plotOn(mframe, Name("sum"), LineColor(kRed), LineWidth(1));
-	fitModel->plotOn(mframe,Name("pdfJpsiExclusive"),Components(*pdfJpsiExclusive),LineStyle(kDashed), LineColor(2), LineWidth(1));
-
-	fitModel->plotOn(mframe,Name("pdfBackground"),Components(*pdfBackground),LineStyle(kDashed), LineColor(7), LineWidth(1));
 	
-	// Define pt frame
-	RooPlot* ptframe = pt->frame(Title("Fit of pt"));
-	data->plotOn(ptframe, Binning(ptBinNumber));
-	fitModel->plotOn(ptframe, Name("sum"), LineColor(kRed), LineWidth(1));
-	fitModel->plotOn(ptframe,Name("pdfJpsiExclusive"),Components(*pdfJpsiExclusive),LineStyle(kDashed), LineColor(2), LineWidth(1));
-	fitModel->plotOn(ptframe,Name("pdfBackground"),Components(*pdfBackground),LineStyle(kDashed), LineColor(7), LineWidth(1));
-	
-	
-	TCanvas* c1 = new TCanvas("2Dplot","2D fit",1800,1200) ;
-	//TCanvas* c1 = new TCanvas("2Dplot","2D fit",800,300) ;
-	if (drawPulls) c1->Divide(3,3) ;
-	else {c1->Divide(3,2) ; c1->SetCanvasSize(1800, 800);}
-
-	// Mass Plot
-	c1->cd(2) ;
-	gPad->SetLeftMargin(0.15) ;
-	gPad->SetBottomMargin(0.15) ;
-	if (logScale) gPad->SetLogy() ;
-	mframe->Draw();
-	
-	// pt plot
-	c1->cd(3) ;
-	gPad->SetLeftMargin(0.15) ;
-	gPad->SetBottomMargin(0.15) ;
-	if (logScale) gPad->SetLogy() ;
-	double yMax2 = ptframe->GetMaximum();
-	double y1 = 0.75*yMax2, y2 = 0.65*yMax2, y3 = 0.57*yMax2;
-	if (logScale) {y1 = yMax2/pow(2.,1), y2 = yMax2/pow(2.,2), y3 = yMax2/pow(2.,2.8);}
-	TLatex* txtExc = new TLatex(ptMin+(ptMax-ptMin)*1/2, y1,Form("b_{exc} = %.2f #pm %.2f", bExc->getVal(), bExc->getError()));
-	ptframe->addObject(txtExc) ;
-	ptframe->Draw();
-	
-	// Quality plots: (data-fit)/sigma
-	c1->cd(5);
-	gPad->SetLeftMargin(0.15) ;
-	//gPad->SetTopMargin(0.15) ;
-	data->plotOn(mframe, Binning(50));
-	fitModel->plotOn(mframe, Binning(50));
-	RooHist* hpullM = mframe->pullHist();
-	hpullM->GetXaxis()->SetRangeUser(mMin, mMax);
-	hpullM->SetTitle("(data - fit)/#sigma for m distribution");
-	hpullM->Draw("");
-	
-	c1->cd(6);
-	gPad->SetLeftMargin(0.15) ;
-	data->plotOn(ptframe, Binning(ptBinNumber));
-	fitModel->plotOn(ptframe, Binning(ptBinNumber));
-	RooHist* hpullPt = ptframe->pullHist();
-	hpullPt->GetXaxis()->SetRangeUser(ptMin, ptMax);
-	hpullPt->SetTitle("(data - fit)/#sigma for p_{T} distribution");
-	hpullPt->Draw("");
-	
-	// Quality plots: data-fit
-	if (drawPulls) {
-		c1->cd(8);
-		gPad->SetLeftMargin(0.15) ;
-		RooHist* hresidM = mframe->residHist();
-		hresidM->GetXaxis()->SetRangeUser(mMin, mMax);
-		hresidM->SetTitle("Residuals (data - fit) for m distribution");
-		hresidM->Draw("");
+	if (!write) {
+		TCanvas* c1 = new TCanvas("2Dplot","2D fit",1800,1200) ;
+		//TCanvas* c1 = new TCanvas("2Dplot","2D fit",800,300) ;
+		if (drawPulls) c1->Divide(3,3) ;
+		else {c1->Divide(3,2) ; c1->SetCanvasSize(1800, 800);}
 		
-		c1->cd(9);
+		// Define mass frame
+		RooPlot* mframe = m->frame(Title("Fit of invariant mass"));
+		data->plotOn(mframe, Binning(50));
+		fitModel->plotOn(mframe, Name("sum"), LineColor(kRed), LineWidth(1));
+		fitModel->plotOn(mframe,Name("pdfJpsiExclusive"),Components(*pdfJpsiExclusive),LineStyle(kDashed), LineColor(2), LineWidth(1));
+		
+		fitModel->plotOn(mframe,Name("pdfBackground"),Components(*pdfBackground),LineStyle(kDashed), LineColor(7), LineWidth(1));
+		
+		// Define pt frame
+		RooPlot* ptframe = pt->frame(Title("Fit of pt"));
+		data->plotOn(ptframe, Binning(ptBinNumber));
+		fitModel->plotOn(ptframe, Name("sum"), LineColor(kRed), LineWidth(1));
+		fitModel->plotOn(ptframe,Name("pdfJpsiExclusive"),Components(*pdfJpsiExclusive),LineStyle(kDashed), LineColor(2), LineWidth(1));
+		fitModel->plotOn(ptframe,Name("pdfBackground"),Components(*pdfBackground),LineStyle(kDashed), LineColor(7), LineWidth(1));
+		
+		// Mass Plot
+		c1->cd(2) ;
 		gPad->SetLeftMargin(0.15) ;
-		RooHist* hresidPt = ptframe->residHist();
-		hresidPt->GetXaxis()->SetRangeUser(ptMin, ptMax);
-		hresidPt->SetTitle("Residuals (data - fit) for p_{T} distribution");
-		hresidPt->Draw("");
+		gPad->SetBottomMargin(0.15) ;
+		if (logScale) gPad->SetLogy() ;
+		mframe->Draw();
+		
+		// pt plot
+		c1->cd(3) ;
+		gPad->SetLeftMargin(0.15) ;
+		gPad->SetBottomMargin(0.15) ;
+		if (logScale) gPad->SetLogy() ;
+		double yMax2 = ptframe->GetMaximum();
+		double y1 = 0.75*yMax2, y2 = 0.65*yMax2, y3 = 0.57*yMax2;
+		if (logScale) {y1 = yMax2/pow(2.,1), y2 = yMax2/pow(2.,2), y3 = yMax2/pow(2.,2.8);}
+		TLatex* txtExc = new TLatex(ptMin+(ptMax-ptMin)*1/2, y1,Form("b_{exc} = %.2f #pm %.2f", bExc->getVal(), bExc->getError()));
+		ptframe->addObject(txtExc) ;
+		ptframe->GetXaxis()->SetRangeUser(0,2.5);
+		ptframe->Draw();
+		
+		// Quality plots: (data-fit)/sigma
+		c1->cd(5);
+		gPad->SetLeftMargin(0.15) ;
+		//gPad->SetTopMargin(0.15) ;
+		data->plotOn(mframe, Binning(50));
+		fitModel->plotOn(mframe, Binning(50));
+		RooHist* hpullM = mframe->pullHist();
+		hpullM->GetXaxis()->SetRangeUser(mMin, mMax);
+		hpullM->SetTitle("(data - fit)/#sigma for m distribution");
+		hpullM->Draw("");
+		
+		c1->cd(6);
+		gPad->SetLeftMargin(0.15) ;
+		data->plotOn(ptframe, Binning(ptBinNumber));
+		fitModel->plotOn(ptframe, Binning(ptBinNumber));
+		RooHist* hpullPt = ptframe->pullHist();
+		hpullPt->GetXaxis()->SetRangeUser(ptMin, ptMax);
+		hpullPt->SetTitle("(data - fit)/#sigma for p_{T} distribution");
+		hpullPt->GetXaxis()->SetRangeUser(0,2.5);
+		hpullPt->Draw("");
+		
+		// Quality plots: data-fit
+		if (drawPulls) {
+			c1->cd(8);
+			gPad->SetLeftMargin(0.15) ;
+			RooHist* hresidM = mframe->residHist();
+			hresidM->GetXaxis()->SetRangeUser(mMin, mMax);
+			hresidM->SetTitle("Residuals (data - fit) for m distribution");
+			hresidM->Draw("");
+			
+			c1->cd(9);
+			gPad->SetLeftMargin(0.15) ;
+			RooHist* hresidPt = ptframe->residHist();
+			hresidPt->GetXaxis()->SetRangeUser(ptMin, ptMax);
+			hresidPt->SetTitle("Residuals (data - fit) for p_{T} distribution");
+			hresidPt->Draw("");
+		}
+		
+		// Legend in a subcanvas
+		c1->cd(1);
+		TLegend* legend = new TLegend(0.1, 0.3, 0.9, 0.9);
+		legend->SetFillColor(kWhite);
+		legend->SetLineColor(kWhite);
+		//legend->AddEntry(ptframe->findObject("pdfkCohJpsiToMu"), "kCohJpsiToMu","L");
+		legend->AddEntry(ptframe->findObject("pdfJpsiExclusive"), "Exclusive J/Psi","L");
+		legend->AddEntry(ptframe->findObject("pdfBackground"), "#gamma#gamma #rightarrow #mu^{+} #mu^{-} + other background","L");
+		legend->AddEntry(ptframe->findObject("sum"),"sum","L");
+		legend->Draw();
+		
+		// Number of different contributions in a subcanvas
+		c1->cd(4);
+		
+		// Write number of candidates
+		//TLatex* txt1 = new TLatex(3.3,0.9*yMax,Form("Coherent Jpsi : %.1f", yieldCohJpsi.getVal()));
+		TLatex* txt2 = new TLatex(0.2,0.9,Form("Exclusive J/#Psi : %.1f #pm %.1f", yieldJpsiExclusive->getVal(), yieldJpsiExclusive->getError()));
+		
+		TLatex* txt6 = new TLatex(0.2,0.8,Form("#gamma#gamma #rightarrow #mu^{+} #mu^{-} : %.1f #pm %.1f", yieldBkg->getVal(), yieldBkg->getError()));
+		txt2->Draw(); txt6->Draw();
+		c1->SaveAs(Form("Plots/MC-Fit-2D-%s-%s-%.1f-%.1f.pdf", suffix.c_str(), period.c_str(), mMin, mMax));
 	}
-	
-	// Legend in a subcanvas
-	c1->cd(1);
-	TLegend* legend = new TLegend(0.1, 0.3, 0.9, 0.9);
-	legend->SetFillColor(kWhite);
-	legend->SetLineColor(kWhite);
-	//legend->AddEntry(ptframe->findObject("pdfkCohJpsiToMu"), "kCohJpsiToMu","L");
-	legend->AddEntry(ptframe->findObject("pdfJpsiExclusive"), "Exclusive J/Psi","L");
-	legend->AddEntry(ptframe->findObject("pdfBackground"), "#gamma#gamma #rightarrow #mu^{+} #mu^{-} + other background","L");
-	legend->AddEntry(ptframe->findObject("sum"),"sum","L");
-	legend->Draw();
-	
-	// Number of different contributions in a subcanvas
-	c1->cd(4);
-	
-	// Write number of candidates
-	//TLatex* txt1 = new TLatex(3.3,0.9*yMax,Form("Coherent Jpsi : %.1f", yieldCohJpsi.getVal()));
-	TLatex* txt2 = new TLatex(0.2,0.9,Form("Exclusive J/#Psi : %.1f #pm %.1f", yieldJpsiExclusive->getVal(), yieldJpsiExclusive->getError()));
-
-	TLatex* txt6 = new TLatex(0.2,0.5,Form("#gamma#gamma #rightarrow #mu^{+} #mu^{-} : %.1f #pm %.1f", yieldBkg->getVal(), yieldBkg->getError()));
-	txt2->Draw(); txt6->Draw();
 	
 	// Ecrire les valeurs dans un fichier
-	
-	string const nomFichier(Form("Numbers-%s.txt", period.c_str()));
-	ofstream monFlux(nomFichier.c_str(), ios::app);
-	
-	if(monFlux)
-	{
-		monFlux << yieldJpsiExclusive->getVal() << " ";
-		monFlux << yieldBkg->getVal() << endl;
+	if (write) {
+		string const nomFichier(Form("Candidate-Numbers/2Dfit-%s-Numbers-%s.txt", suffix.c_str(), period.c_str()));
+		ofstream monFlux(nomFichier.c_str(), ios::app);
+		
+		if(monFlux) {
+			monFlux << yieldJpsiExclusive->getVal() << " ";
+			monFlux << yieldBkg->getVal() << endl;
+		}
+		else { cout << "File not opened" << std::endl;}
 	}
-	else
-	{
-		cout << "File not opened" << std::endl;
-	}
-	
-
-	c1->SaveAs(Form("Plots/MC-Fit-2D-%s-%.1f-%.1f.pdf", period.c_str(), mMin, mMax));
 	
 }
 
-void MCTwoDPlot(std::string rootfilePathMC, bool logScale = false, bool drawPulls = false, bool useOriginalPt = true) {
+void MCTwoDPlot(std::string rootfilePathMC, bool logScale = false, bool drawPulls = false, bool useOriginalPt = true, bool write = false) {
 	
 	gStyle->SetOptStat(0);
 	gStyle->SetTitleFontSize(.05);
@@ -293,7 +299,7 @@ void MCTwoDPlot(std::string rootfilePathMC, bool logScale = false, bool drawPull
 	
 	for (int k = 0; k<nPeriod; k++) {
 		std::string period = periods[k];
-
+		
 		// Open the file
 		TFile *fAna = new TFile(Form("%s/toy_MC_%s.root", rootfilePathMC.c_str(), period.c_str()),"READ");
 		
@@ -304,7 +310,7 @@ void MCTwoDPlot(std::string rootfilePathMC, bool logScale = false, bool drawPull
 		ImportDataSet(wspace, fAnaTree);
 		AddModel(wspace, rootfilePathMC, period, useOriginalPt);
 		wspace->Print();
-		MakePlots(wspace, period, drawPulls, logScale);
+		MakePlots(wspace, period, drawPulls, logScale, useOriginalPt, write);
 		
 		
 	}

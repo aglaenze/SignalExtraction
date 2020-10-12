@@ -50,16 +50,16 @@ using namespace std;
 
 Double_t mMin = 2.6, mMax = 3.5;
 Double_t ptMin = 0., ptMax = 8;
-int ptBinNumber = 70;
+int ptBinNumber = int(10*ptMax);
 
 
 std::map<std::string, Int_t> nEventsSignal, nEventsBkg;
 
 void InitiateNumbers(std::map<std::string, Int_t> &nEventsSignal, std::map<std::string, Int_t> &nEventsBkg) {
-	nEventsSignal["LHC16r"] = 2155;
-	nEventsSignal["LHC16s"] = 856;
-	nEventsBkg["LHC16r"] = 389;
-	nEventsBkg["LHC16s"] = 49;
+	nEventsSignal["LHC16r"] = 1000;
+	nEventsSignal["LHC16s"] = 600;
+	nEventsBkg["LHC16r"] = 500;
+	nEventsBkg["LHC16s"] = 100;
 }
 
 
@@ -88,7 +88,10 @@ void AddModel(RooWorkspace* ws) {
 	RooCBShape *jpsi = new RooCBShape("jpsi","crystal ball PDF", m, mean_jpsi, sigma_jpsi,alpha_jpsi,n_jpsi);
 	
 	//Exponential background
-	RooRealVar a1("a1","a1",-1.,-5,-0.);
+	//RooRealVar a1("a1","a1",-1.,-5,-0.);
+	// Constant function
+	//RooRealVar a1("a1","a1",0);
+	RooRealVar a1("a1","a1",1, 0, 3);
 	RooExponential *bkg = new RooExponential("exp","exp",m,a1);
 	
 	//RooRealVar fsig("fsig","signalPhi",0.1,0.,1.);
@@ -182,12 +185,8 @@ void DoSPlot(RooWorkspace* ws) {
 }
 
 
-void MakePlots(RooWorkspace *ws, std::string rootfilePathMC, std::string period, bool drawPulls) {
+void MakePlots(RooWorkspace *ws, std::string rootfilePathMC, std::string period, bool drawPulls, bool write) {
 	
-	//make some plots
-	TCanvas* cv = new TCanvas("splot","splot",900,900) ;
-	if (drawPulls) cv->Divide(3, 3);
-	else {cv->Divide(3, 2); cv->SetCanvasSize(900, 600);}
 	
 	//get what we need of the workspace
 	RooAbsPdf* model = ws->pdf("mfit");
@@ -201,42 +200,6 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePathMC, std::string period,
 	RooRealVar* pt = ws->var("pt");
 	
 	RooDataSet* data = (RooDataSet*) ws->data("dataWithSWeights");
-	
-	// First draw mass fit
-	cv->cd(1);
-	gPad->SetLeftMargin(0.15);
-	RooRealVar* jPsiYield = ws->var("fsigJPsi");
-	RooRealVar* bkgYield = ws->var("fbkg");
-	RooPlot* frame = m->frame();
-	data->plotOn(frame);
-	model->plotOn(frame);
-	model->plotOn(frame, Components(*model), LineStyle(kDashed), LineColor(kRed));
-	model->plotOn(frame, Components(*jPsiModel), LineStyle(kDashed), LineColor(kRed));
-	model->plotOn(frame, Components(*bkgModel), LineStyle(kDashed), LineColor(kGreen));
-	frame->SetTitle("Fit to model to discriminating variable");
-	double yMax0 = frame->GetMaximum();
-	double x0 = mMin+(mMax-mMin)*0.2;
-	TText* txt0 = new TText(x0,0.6*yMax0,Form("%.1f J/Psi", jPsiYield->getVal()));
-	TText* txt1 = new TText(x0,0.5*yMax0,Form("%.1f Bkg", bkgYield->getVal()));
-	//txt3->SetTextSize(0.05) ;
-	frame->addObject(txt0) ;
-	frame->addObject(txt1) ;
-	frame->Draw();
-	
-	// Ecrire les valeurs dans un fichier
-	
-	string const nomFichier(Form("Numbers-%s.txt", period.c_str()));
-	ofstream monFlux(nomFichier.c_str(), ios::app);
-	
-	if(monFlux)
-	{
-		monFlux << jPsiYield->getVal() << " ";
-		monFlux << bkgYield->getVal() << endl;
-	}
-	else
-	{
-		cout << "File not opened" << std::endl;
-	}
 	
 	
 	// Get weighted data
@@ -253,92 +216,138 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePathMC, std::string period,
 	//ptSignalModel->fitTo(*dataw_jpsi, Extended(), Minos(true), Strategy(2));
 	//ptBkgModel->fitTo(*dataw_bkg, Extended(), Minos(true), Strategy(2));
 	
-	// Draw pt with weights
-	// For signal
-	cv->cd(2);
-	gPad->SetLeftMargin(0.15);
-	RooPlot* frame2 = pt->frame() ;
-	dataw_jpsi->plotOn(frame2, DataError(RooAbsData::SumW2) ) ;
-	ptSignalModel->plotOn(frame2, LineStyle(kDashed), LineColor(kRed));
-	frame2->SetTitle("p_{T} distribution for J/#Psi with weights");
-	frame2->Draw() ;
-	TLegend* lgdJpsi = new TLegend(0.3, 0.7, 0.9, 0.9);
-	lgdJpsi->AddEntry(frame2->findObject("h_dataWithSWeights"), "reconstructed signal", "LP");
-	lgdJpsi->AddEntry(frame2->findObject("ptSignalMC_Norm[pt]"), "original distribution", "L");
-	lgdJpsi->Draw();
+	RooRealVar* jPsiYield = ws->var("fsigJPsi");
+	RooRealVar* bkgYield = ws->var("fbkg");
 	
-	// And for background
-	cv->cd(3);
-	gPad->SetLeftMargin(0.15);
-	RooPlot* frame3 = pt->frame() ;
-	dataw_bkg->plotOn(frame3,DataError(RooAbsData::SumW2) ) ;
-	ptBkgModel->plotOn(frame3, LineStyle(kDashed), LineColor(kRed));
-	frame3->SetTitle("p_{T} distribution for #gamma#gamma #rightarrow #mu#mu with weights");
-	frame3->Draw() ;
-	frame3->Print("v");
-	TLegend* lgdBkg = new TLegend(0.3, 0.7, 0.9, 0.9);
-	lgdBkg->AddEntry(frame3->findObject("h_dataWithSWeights"), "reconstructed signal", "LP");
-	lgdBkg->AddEntry(frame3->findObject("ptBkgMC_Norm[pt]"), "original distribution", "L");
-	lgdBkg->Draw();
-	//return;
-	
-	// Then finally, draw quality plots
-	// For the mass fit
-	cv->cd(4);
-	gPad->SetLeftMargin(0.15);
-	data->plotOn(frame, Binning(40));
-	model->plotOn(frame, Binning(40));
-	RooHist* hpull = frame->pullHist();
-	hpull->GetXaxis()->SetRangeUser(mMin, mMax);
-	hpull->SetTitle("(data - fit)/#sigma of the mass fit");
-	hpull->Draw("");
-	cv->cd(7);
-	gPad->SetLeftMargin(0.15);
-	RooHist* hresid = frame->residHist();
-	hresid->GetXaxis()->SetRangeUser(mMin, mMax);
-	hresid->SetTitle("Residuals (data - fit) of the mass fit");
-	hresid->Draw("");
-	
-	// Draw quality histograms
-	// First (data-fit)/sigma
-	// For signal pt
-	cv->cd(5);
-	gPad->SetLeftMargin(0.15);
-	dataw_jpsi->plotOn(frame2, Binning(40));
-	ptSignalModel->plotOn(frame2, Binning(40));
-	RooHist* hpull2 = frame2->pullHist();
-	hpull2->GetXaxis()->SetRangeUser(ptMin, ptMax);
-	hpull2->SetTitle("(reconstructed - original)/#sigma of J/#Psi p_{T}");
-	hpull2->Draw("");
-	
-	// For background pt
-	cv->cd(6);
-	gPad->SetLeftMargin(0.15);
-	dataw_bkg->plotOn(frame3, Binning(40));
-	ptBkgModel->plotOn(frame3, Binning(40));
-	RooHist* hpull3 = frame3->pullHist();
-	hpull3->GetXaxis()->SetRangeUser(ptMin, ptMax);
-	hpull3->SetTitle("(reconstructed - original)/#sigma of bkg p_{T}");
-	hpull3->Draw("");
-	
-	// Draw pull histograms = data-fit
-	if (drawPulls) {
-		cv->cd(8);
-		gPad->SetLeftMargin(0.15);
-		RooHist* hresid2 = frame2->residHist();
-		hresid2->GetXaxis()->SetRangeUser(ptMin, ptMax);
-		hresid2->SetTitle("Residuals (reconstructed - original) of J/#Psi p_{T}");
-		hresid2->Draw("");
+	// Ecrire les valeurs dans un fichier
+	if (write) {
+		string const nomFichier(Form("Candidate-Numbers/sPlot-Numbers-%s.txt", period.c_str()));
+		ofstream monFlux(nomFichier.c_str(), ios::app);
 		
-		cv->cd(9);
-		gPad->SetLeftMargin(0.15);
-		RooHist* hresid3 = frame3->residHist();
-		hresid3->GetXaxis()->SetRangeUser(ptMin, ptMax);
-		hresid3->SetTitle("Residuals (reconstructed - original) of bkg p_{T}");
-		hresid3->Draw("");
+		if (monFlux) {
+			monFlux << jPsiYield->getVal() << " ";
+			monFlux << bkgYield->getVal() << endl;
+		}
+		else {cout << "File not opened" << std::endl;}
 	}
 	
-	cv->SaveAs(Form("Plots/toyMC-splot-%s-%d-%d.pdf", period.c_str(), nEventsBkg[period], nEventsSignal[period]));
+	
+	
+	
+	if (!write) {
+	//if (true) {
+		//make some plots
+		TCanvas* cv = new TCanvas("splot","splot",900,900) ;
+		if (drawPulls) cv->Divide(3, 3);
+		else {cv->Divide(3, 2); cv->SetCanvasSize(900, 600);}
+		
+		// First draw mass fit
+		cv->cd(1);
+		gPad->SetLeftMargin(0.15);
+		RooPlot* frame = m->frame();
+		data->plotOn(frame);
+		model->plotOn(frame);
+		model->plotOn(frame, Components(*model), LineStyle(kDashed), LineColor(kRed));
+		model->plotOn(frame, Components(*jPsiModel), LineStyle(kDashed), LineColor(kRed));
+		model->plotOn(frame, Components(*bkgModel), LineStyle(kDashed), LineColor(kGreen));
+		frame->SetTitle("Fit to model to discriminating variable");
+		double yMax0 = frame->GetMaximum();
+		double x0 = mMin+(mMax-mMin)*0.2;
+		TText* txt0 = new TText(x0,0.6*yMax0,Form("%.1f J/Psi", jPsiYield->getVal()));
+		TText* txt1 = new TText(x0,0.5*yMax0,Form("%.1f Bkg", bkgYield->getVal()));
+		//txt3->SetTextSize(0.05) ;
+		frame->addObject(txt0) ;
+		frame->addObject(txt1) ;
+		frame->Draw();
+		// Draw pt with weights
+		// For signal
+		cv->cd(2);
+		gPad->SetLeftMargin(0.15);
+		RooPlot* frame2 = pt->frame() ;
+		dataw_jpsi->plotOn(frame2, DataError(RooAbsData::SumW2) ) ;
+		ptSignalModel->plotOn(frame2, LineStyle(kDashed), LineColor(kRed));
+		frame2->SetTitle("p_{T} distribution for J/#Psi with weights");
+		frame2->GetXaxis()->SetRangeUser(0,2);
+		frame2->Draw() ;
+		TLegend* lgdJpsi = new TLegend(0.3, 0.7, 0.9, 0.9);
+		lgdJpsi->AddEntry(frame2->findObject("h_dataWithSWeights"), "reconstructed signal", "LP");
+		lgdJpsi->AddEntry(frame2->findObject("ptSignalMC_Norm[pt]"), "original distribution", "L");
+		lgdJpsi->Draw();
+		
+		// And for background
+		cv->cd(3);
+		gPad->SetLeftMargin(0.15);
+		RooPlot* frame3 = pt->frame() ;
+		dataw_bkg->plotOn(frame3,DataError(RooAbsData::SumW2) ) ;
+		ptBkgModel->plotOn(frame3, LineStyle(kDashed), LineColor(kRed));
+		frame3->SetTitle("p_{T} distribution for #gamma#gamma #rightarrow #mu#mu with weights");
+		frame3->GetXaxis()->SetRangeUser(0,2);
+		frame3->Draw() ;
+		frame3->Print("v");
+		TLegend* lgdBkg = new TLegend(0.3, 0.7, 0.9, 0.9);
+		lgdBkg->AddEntry(frame3->findObject("h_dataWithSWeights"), "reconstructed signal", "LP");
+		lgdBkg->AddEntry(frame3->findObject("ptBkgMC_Norm[pt]"), "original distribution", "L");
+		lgdBkg->Draw();
+		//return;
+		
+		// Then finally, draw quality plots
+		// For the mass fit
+		cv->cd(4);
+		gPad->SetLeftMargin(0.15);
+		data->plotOn(frame, Binning(40));
+		model->plotOn(frame, Binning(40));
+		RooHist* hpull = frame->pullHist();
+		hpull->GetXaxis()->SetRangeUser(mMin, mMax);
+		hpull->SetTitle("(data - fit)/#sigma of the mass fit");
+		hpull->Draw("");
+		cv->cd(7);
+		gPad->SetLeftMargin(0.15);
+		RooHist* hresid = frame->residHist();
+		hresid->GetXaxis()->SetRangeUser(mMin, mMax);
+		hresid->SetTitle("Residuals (data - fit) of the mass fit");
+		hresid->Draw("");
+		
+		// Draw quality histograms
+		// First (data-fit)/sigma
+		// For signal pt
+		cv->cd(5);
+		gPad->SetLeftMargin(0.15);
+		dataw_jpsi->plotOn(frame2, Binning(40));
+		ptSignalModel->plotOn(frame2, Binning(40));
+		RooHist* hpull2 = frame2->pullHist();
+		hpull2->GetXaxis()->SetRangeUser(ptMin, ptMax);
+		hpull2->SetTitle("(reconstructed - original)/#sigma of J/#Psi p_{T}");
+		hpull2->Draw("");
+		
+		// For background pt
+		cv->cd(6);
+		gPad->SetLeftMargin(0.15);
+		dataw_bkg->plotOn(frame3, Binning(40));
+		ptBkgModel->plotOn(frame3, Binning(40));
+		RooHist* hpull3 = frame3->pullHist();
+		hpull3->GetXaxis()->SetRangeUser(ptMin, ptMax);
+		hpull3->SetTitle("(reconstructed - original)/#sigma of bkg p_{T}");
+		hpull3->Draw("");
+		
+		// Draw pull histograms = data-fit
+		if (drawPulls) {
+			cv->cd(8);
+			gPad->SetLeftMargin(0.15);
+			RooHist* hresid2 = frame2->residHist();
+			hresid2->GetXaxis()->SetRangeUser(ptMin, ptMax);
+			hresid2->SetTitle("Residuals (reconstructed - original) of J/#Psi p_{T}");
+			hresid2->Draw("");
+			
+			cv->cd(9);
+			gPad->SetLeftMargin(0.15);
+			RooHist* hresid3 = frame3->residHist();
+			hresid3->GetXaxis()->SetRangeUser(ptMin, ptMax);
+			hresid3->SetTitle("Residuals (reconstructed - original) of bkg p_{T}");
+			hresid3->Draw("");
+		}
+		
+		cv->SaveAs(Form("Plots/toyMC-splot-%s-%d-%d.pdf", period.c_str(), nEventsBkg[period], nEventsSignal[period]));
+	}
 	
 	
 	// Now save pt shapes
@@ -368,7 +377,7 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePathMC, std::string period,
 		if (hPtBackground->GetBinContent(binNum) > 0) {smoothVal = TMath::Log(hPtBackground->GetBinContent(binNum));}
 		else smoothVal = -10;	// by default say there's 10^-2 background events (originally) in this bin
 		double size = binNum*0.8;	// number of bins to smooth
-		if (size > 15) size = 15.;
+		if (size > 10) size = 10.;
 		for (int j = 1; j < (int)size; j++ ) {
 			if (binNum-j > 0) {
 				nSmoothBins++;
@@ -474,9 +483,20 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 		 */
 	}
 	
+	// Create a histogram that is constant or exp
+	int nBins=int(1000*(mMax-mMin));
+	TH1F* histFunction = new TH1F("histFunction", "histFunction", nBins, mMin, mMax);
+	for (int i = 0; i<nBins; i++) {
+		double value = 1;
+		//double value = TMath::Exp(0.001*i);
+		histFunction->SetBinContent(i, value);
+	}
+	
+	
 	int nPbBkg = 0;
 	//for (int i = 0; i<nBkg; i++) {
 	for (int i = 0; i<nEventsBkg[period]; i++) {
+		
 		int r = rand() % nBkg;
 		if ((int)bkgIndices.size() == nBkg) {std::cout << "not enough stats! bye" << std::endl; return false;}
 		if (contains(bkgIndices,r)) {i--; continue;}
@@ -488,8 +508,10 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 			//std::cout << "event (background) ignored because not in the right range of pt or m" << std::endl;
 			i--;
 			continue;}
+		mBkg = histFunction->GetRandom();	// when not from MC root file
 		mMixed = mBkg;
 		ptMixed = ptBkg;
+
 		/*
 		 histM->Fill(mBkg);
 		 histPt->Fill(ptBkg);
@@ -502,6 +524,7 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 	
 	std::cout << nPbSig << " signal events ignored because not in the right range of pt or m" << std::endl;
 	std::cout << nPbBkg << " background events ignored because not in the right range of pt or m" << std::endl;
+	
 	
 	if (draw) {
 		TCanvas* cv = new TCanvas("ToyMC","Toy MC",600,300) ;
@@ -528,12 +551,15 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 		// pt distributions
 		cv->cd(4);
 		tSignal->Draw("pt>>histSignalPt");
+		histSignalPt->GetXaxis()->SetRangeUser(0,2);
 		histSignalPt->Draw();
 		cv->cd(5);
 		tBkg->Draw("pt>>histBkgPt");
+		histBkgPt->GetXaxis()->SetRangeUser(0,2);
 		histBkgPt->Draw();
 		cv->cd(6);
 		tMixed->Draw("pt>>histPt");
+		histPt->GetXaxis()->SetRangeUser(0,2);
 		histPt->Draw();
 		
 		cv->SaveAs(Form("Plots/ToyMC-%s.pdf", period.c_str()));
@@ -546,11 +572,12 @@ bool CreateTrees(std::string rootfilePathMC, std::string period, bool draw = fal
 	tMixed->Write();
 	fAna->Close();
 	
+	
 	return true;
 }
 
 // 2e étape : faire un sPlot pour extraire ma distribution en pt
-void ToyMC(std::string rootfilePathMC, bool drawPulls) {
+void ToyMC(std::string rootfilePathMC, bool drawPulls, bool write) {
 	
 	std::vector <std::string> periods = {"LHC16r", "LHC16s"};
 	const int nPeriods = periods.size();
@@ -559,7 +586,7 @@ void ToyMC(std::string rootfilePathMC, bool drawPulls) {
 	
 	for (int k = 0; k<nPeriods; k++) {
 		std::string period = periods[k];
-		bool newTrees = CreateTrees(rootfilePathMC, period, true);	// false = don't draw
+		bool newTrees = CreateTrees(rootfilePathMC, period, !write);	// false = don't draw
 		if (!newTrees) {std::cout << "Trees not created! bye" << std::endl; return;}
 		
 		// Open the file
@@ -585,7 +612,7 @@ void ToyMC(std::string rootfilePathMC, bool drawPulls) {
 		DoSPlot(wspace);
 		
 		GetPtHistMC(wspace, rootfilePathMC, period);
-		MakePlots(wspace, rootfilePathMC, period, drawPulls);
+		MakePlots(wspace, rootfilePathMC, period, drawPulls, write);
 		
 		//cleanup
 		delete wspace;

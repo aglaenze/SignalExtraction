@@ -2,10 +2,19 @@
 #include <fstream>
 #include <dirent.h>
 #include <string>
+#include <sstream>
 #include <cmath>
 
-int nEventsSignal[2] = {2155, 856};
-int nEventsBkg[2] = {389, 49};
+#include <TROOT.h>
+#include "TH1F.h"
+#include "TH2F.h"
+#include "TCanvas.h"
+#include "TAxis.h"
+#include "TText.h"
+#include "TLine.h"
+
+int nEventsSignal[2] = {1000, 600};
+int nEventsBkg[2] = {500, 100};
 
 
 using namespace std;
@@ -19,7 +28,6 @@ void ReadMCNumbers() {
 		string period = periods[k];
 		int nSig = nEventsSignal[k];
 		int nBkg = nEventsBkg[k];
-		ifstream monFlux(Form("Numbers-%s.txt", period.c_str()));  //Ouverture d'un fichier en lecture
 		TH1F* hSig1 = new TH1F("histSigSplot", "Number of J/Psi from sPlot", 50, nSig-100,  nSig+100);
 		TH1F* hSig2 = new TH1F("histSigOriginal", "Number of J/Psi from 2D fit (original pt template)", 50, nSig-100,  nSig+100);
 		TH1F* hSig3 = new TH1F("histSigTemp", "Number of J/Psi from sPlot (pt template from sPlot)", 50, nSig-100,  nSig+100);
@@ -30,34 +38,46 @@ void ReadMCNumbers() {
 		
 		double nJpsiSplot, nJpsiOriginal, nJpsiTemp;
 		double nBkgSplot, nBkgOriginal, nBkgTemp;
-		if(monFlux)
+		
+		ifstream monFluxSplot(Form("Candidate-Numbers/sPlot-Numbers-%s.txt", period.c_str()));  //Ouverture d'un fichier en lecture
+		if(monFluxSplot)
 		{
 			string line; //Une variable pour stocker les lignes lues
-			
-			int lineIndex = 0;
-			while(getline(monFlux, line)) //Tant qu'on n'est pas à la fin, on lit
-			{
+			while(getline(monFluxSplot, line)) {
 				stringstream stream(line);
-				if (lineIndex%3 == 0) {
-					stream >> nJpsiSplot >> nBkgSplot;
-					hSig1->Fill(nJpsiSplot);
-					hBkg1->Fill(nBkgSplot);
-				}
-				else if (lineIndex%3 == 1) {
-					stream >> nJpsiOriginal >> nBkgOriginal;
-					hSig2->Fill(nJpsiOriginal);
-					hBkg2->Fill(nBkgOriginal);
-				}
-				else if (lineIndex%3 == 2) {
-					stream >> nJpsiTemp >> nBkgTemp;
-					hSig3->Fill(nJpsiTemp);
-					hBkg3->Fill(nBkgTemp);
-				}
-				else {cout << "Problem" << endl; return;}
-				lineIndex++;
+				stream >> nJpsiSplot >> nBkgSplot;
+				hSig1->Fill(nJpsiSplot);
+				hBkg1->Fill(nBkgSplot);
 			}
 		}
 		else {cout << "ERREUR: Impossible d'ouvrir le fichier en lecture." << endl;}
+		
+		ifstream monFlux2dOriginal(Form("Candidate-Numbers/2Dfit-original-Numbers-%s.txt", period.c_str()));
+		if(monFlux2dOriginal) {
+			string line; //Une variable pour stocker les lignes lues
+			
+			while(getline(monFlux2dOriginal, line)) {
+				stringstream stream(line);
+				stream >> nJpsiOriginal >> nBkgOriginal;
+				hSig2->Fill(nJpsiOriginal);
+				hBkg2->Fill(nBkgOriginal);
+			}
+		}
+		else {cout << "ERREUR: Impossible d'ouvrir le fichier en lecture." << endl;}
+		
+		ifstream monFlux2dExtracted(Form("Candidate-Numbers/2Dfit-extracted-Numbers-%s.txt", period.c_str()));  //Ouverture d'un fichier en lecture
+		if(monFlux2dExtracted) {
+			string line; //Une variable pour stocker les lignes lues
+			while(getline(monFlux2dExtracted, line)) //Tant qu'on n'est pas à la fin, on lit
+			{
+				stringstream stream(line);
+				stream >> nJpsiTemp >> nBkgTemp;
+				hSig3->Fill(nJpsiTemp);
+				hBkg3->Fill(nBkgTemp);
+			}
+		}
+		else {cout << "ERREUR: Impossible d'ouvrir le fichier en lecture." << endl;}
+		
 		
 		// Lines for original numbers
 		double yMax1 = hSig1->GetMaximum()*1.05;

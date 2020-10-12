@@ -47,7 +47,7 @@ std::list<TCut> DefineCuts(std::string period) {
 	else if (period == "LHC16s") i = 1;
 	if (i == -1) {std::cout << "Wrong period in DefineCuts" << std::endl; return {};}
 	
-	ZNcut[0] = "!fZNAgoodTiming";
+	ZNcut[0] = "!fZNAgoodTiming";	// no event in beam-beam time window (because UPC only)
 	ZNcut[1] = "!fZNCgoodTiming";
 	//ZNcut = "fZNAfired==0";
 	
@@ -62,37 +62,40 @@ std::list<TCut> DefineCuts(std::string period) {
 	 ZNcut[0] = !ZNcut[0];
 	 ZNcut[1] = !ZNcut[1];
 	 */
+	V0cut[0] = "fV0ADecision == 0";		// Pb does not dissociate
+	V0cut[1] = "";
 	
-	bool diss = true;
-	if (diss) {
-		ADcut[0] = "!(fADADecision==1)";	// Pb does not dissociate
-		ADcut[1] = "!(fADCDecision==1)";
-		
-		V0cut[0] = "fV0ADecision == 0";		// Pb does not dissociate
-		V0cut[1] = "";
-	}
-	else {
-		ADcut[0] = "!(fADCDecision==1) && !(fADADecision==1)";	// Pb and p do not dissociate
-		ADcut[1] = "!(fADCDecision==1) && !(fADADecision==1)";
-		/*
-		 ADcut[0] = "(fADCDecision==0) && (fADADecision==0)";
-		 ADcut[1] = "(fADCDecision==0) && (fADADecision==0)";
-		 */
-		V0cut[0] = "fV0ADecision == 0";		// Pb does not dissociate
-		//V0cut[1] = "(fV0ADecision==0 || fV0ADecision==1)";
-		V0cut[1] = "fV0CDecision == 0";		// p does not dissociate
-		//V0cut[1] = "fV0CDecision==0 && (fV0ADecision==0 || fV0ADecision==1)";
-	}
+	ADcut[0] = "!(fADADecision==1) && fADABBNHits==0";	// Pb does not dissociate
+	ADcut[1] = "!(fADCDecision==1) && fADCBBNHits==0";
+	
+	bool exclusiveOnly = false;	// if true, p is not allowed to break
+	bool inclusiveOnly = false;
+
 	
 	TCut unlikeSignCut = "(fTrkQ1 < 0 && fTrkQ2 > 0) || (fTrkQ1 > 0 && fTrkQ2 < 0)";
-	std::list<TCut> mCutList = {"", unlikeSignCut, ZNcut[i], ADcut[i], V0cut[i]};
-	//std::list<TCut> mCutList = {"", ZNcut[i], ADcut[i], V0cut[i]};
-	//std::list<TCut> mCutList = {"", unlikeSignCut, ZNcut[i], ADcut[i]};
+	std::list<TCut> mCutList = {"", "fAnaType==0", unlikeSignCut, ZNcut[i], ADcut[i], V0cut[i], "fTracklets == 0"};
+	//std::list<TCut> mCutList = {"", "fAnaType==0", unlikeSignCut, ADcut[i], V0cut[i], "fV0CBBNHits < 3"};
+	
+	if (exclusiveOnly) {
+		std::list<TCut> cutListExclusive = {"fTracklets == 0", "fV0CBBNHits < 3", "fV0CBGNHits == 0", "fTrkTrkPt<4", "(fADCDecision==0) && (fADADecision==0)"};
+		for (std::list<TCut>::iterator it=cutListExclusive.begin(); it!=cutListExclusive.end(); it++)
+		mCutList.push_back(*it);
+	}
+	if (inclusiveOnly) {
+		//std::list<TCut> cutListInclusive = {"fV0CBBNHits > 2"};
+		std::list<TCut> cutListInclusive = {"fTracklets > 0"};
+		for (std::list<TCut>::iterator it=cutListInclusive.begin(); it!=cutListInclusive.end(); it++)
+		mCutList.push_back(*it);
+	}
+
+	//std::list<TCut> mCutList = {"", "fAnaType==0", unlikeSignCut, ZNcut[i], ADcut[i], V0cut[i]};
+	//std::list<TCut> mCutList = {"", "fAnaType==0", ZNcut[i], ADcut[i], V0cut[i]};
+	//std::list<TCut> mCutList = {"", "fAnaType==0", unlikeSignCut, ZNcut[i], ADcut[i]};
 	return mCutList;
 }
 
 
-void ImportDataSet(RooWorkspace* ws, TTree* tree, TCut cut = "", Double_t mMin = 1.5, Double_t mMax = 5, Double_t ptMin = 0, Double_t ptMax = 4) {
+void ImportDataSet(RooWorkspace* ws, TTree* tree, TCut cut = "", Double_t mMin = 1.5, Double_t mMax = 5, Double_t ptMin = 0, Double_t ptMax = 8) {
 	// import data
 	
 	RooRealVar m("fTrkTrkM","M_{#mu#mu} (GeV/c2)", mMin, mMax);
@@ -110,16 +113,25 @@ void ImportDataSet(RooWorkspace* ws, TTree* tree, TCut cut = "", Double_t mMin =
 	RooRealVar fZPAEnergy("fZPAEnergy","fZPAEnergy",-1.e5,1.e5);
 	RooRealVar fZPCEnergy("fZPCEnergy","fZPCEnergy",-1.e5,1.e5);
 	
+	// V0
 	RooRealVar fV0ADecision("fV0ADecision","fV0ADecision",-1,5);
 	RooRealVar fV0CDecision("fV0CDecision","fV0CDecision",-1,5);
-	RooRealVar fV0ACounts("fV0ACounts","fV0ACounts",0,20);
-	RooRealVar fV0CCounts("fV0CCounts","fV0CCounts",0,20);
+	RooRealVar fV0ACounts("fV0ACounts","fV0ACounts",-1,1000);
+	RooRealVar fV0CCounts("fV0CCounts","fV0CCounts",-1,1000);
+	RooRealVar fV0CBBNHits("fV0CBBNHits","fV0CBBNHits", 0, 33);
+	RooRealVar fV0CBGNHits("fV0CBGNHits","fV0CBGNHits", 0, 33);
 	
 	RooRealVar fADADecision("fADADecision","fADADecision",-1,5);
 	RooRealVar fADCDecision("fADCDecision","fADCDecision",-1,5);
-	RooRealVar fTracklets("fTracklets","fTracklets",-1,100);
+	
+	RooRealVar fADABBNHits("fADABBNHits","fADABBNHits",-1,30);
+	RooRealVar fADCBBNHits("fADCBBNHits","fADCBBNHits",-1,30);
+	
 	//RooRealVar fTrkTrkY("fTrkTrkY","fTrkTrkY",-20,20);
 	RooRealVar fTrkTrkY("fTrkTrkY","fTrkTrkY",-4.0,-2.5);
+	//RooRealVar fTrkTrkY("fTrkTrkY","fTrkTrkY",-3.2,-2.7);
+	
+	RooRealVar fTracklets("fTracklets","fTracklets",-2.0,3.e5);
 	
 	RooRealVar fTrkQ1("fTrkQ1","fTrkQ1",-5,5);
 	RooRealVar fTrkQ2("fTrkQ2","fTrkQ2",-5,5);
@@ -128,23 +140,32 @@ void ImportDataSet(RooWorkspace* ws, TTree* tree, TCut cut = "", Double_t mMin =
 	variables.add(fZNAgoodTiming);
 	variables.add(fZNCgoodTiming);
 	
+	/*
 	variables.add(fZNAEnergy);
 	variables.add(fZNCEnergy);
 	variables.add(fZPAEnergy);
 	variables.add(fZPCEnergy);
+	 */
 	
 	variables.add(fV0ADecision);
 	variables.add(fV0CDecision);
+
 	variables.add(fV0ACounts);
 	variables.add(fV0CCounts);
+	variables.add(fV0CBBNHits);
+	variables.add(fV0CBGNHits);
 	
 	variables.add(fADADecision);
 	variables.add(fADCDecision);
-	variables.add(fTracklets);
+	
+	variables.add(fADABBNHits);
+	variables.add(fADCBBNHits);
+	
 	variables.add(fTrkTrkY);
 	
 	variables.add(fTrkQ1);
 	variables.add(fTrkQ2);
+	variables.add(fTracklets);
 	
 	RooDataSet* data = new RooDataSet("data","data",variables,Import(*tree),Cut(cut));
 	
@@ -154,7 +175,7 @@ void ImportDataSet(RooWorkspace* ws, TTree* tree, TCut cut = "", Double_t mMin =
 	
 	Int_t nData = data->numEntries();
 	Int_t nEntries = tree->GetEntries();
-	std::cout << "\n\n Number of entries = " << nData << "\nAnd entries in TTree = "<< nEntries << "\n\n" << std::endl;
+	std::cout << "\n\nNumber of entries = " << nData << "\nAnd entries in TTree = "<< nEntries << "\n\n" << std::endl;
 }
 
 
