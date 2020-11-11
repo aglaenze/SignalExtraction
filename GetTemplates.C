@@ -216,7 +216,7 @@ void GetTemplates(std::string rootfilePath, std::vector<std::string> periods = {
 		std::string period = periods[k];
 		
 		// Define cuts
-		std::list<TCut> mCutList = DefineCuts(period);
+		std::list<TCut> mCutList = DefineCuts(period, false);
 		TCut mCut = "";
 		
 		for (std::list <TCut>::iterator iter = mCutList.begin(); iter != mCutList.end(); ++iter) {mCut += *iter;}

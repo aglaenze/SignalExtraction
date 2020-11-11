@@ -41,64 +41,102 @@
 #include "RooWorkspace.h"
 #include "RooPlot.h"
 
-#include "_FitUtils.C"
-#include "ExtendedCrystalBall.h"
+#include "Include/FitUtils.C"
 
 using namespace RooFit;
+using namespace std;
 
 Double_t mLimitPsi2s = 3.65;
 
-void AddModel(RooWorkspace* ws, std::string period, Double_t mMax) {
+
+void SubtractBkg(TH1* hPtMc , TH1* hBackground, TH1* hSub) {
+	
+	int nBins = hBackground->GetNbinsX();
+
+	double scale = (double)hBackground->GetMaximum()/hPtMc->GetMaximum();
+	hPtMc->Scale(scale);
+	
+	// Create the subtraction histo between packground data and MC (two gamma)
+	//TH1F* hSub = new TH1F("histSub", "hist sub", nBins, xMin, xMax);
+	for (int l = 0; l<nBins; l++) {
+		int binBkg = hBackground->GetBinContent(l);
+		int binMc = hPtMc->GetBinContent(l);
+		if (binBkg > binMc) hSub->SetBinContent(l, binBkg - binMc);
+		else hSub->SetBinContent(l, 0);
+	}
+}
+
+void SmoothHistLog(TH1* hPtBackground, TH1* hPtBkgSmooth, int avgSize = 3) {
+	double negValue = -10;	// in case the value is negative, pb log(neg) so set log to this negvalue
+	int ptBinNumber = hPtBkgSmooth->GetNbinsX();
+	for (int k = 0; k<ptBinNumber; k++) {
+		int binNum = k+1;
+		double smoothVal = 0;
+		int nSmoothBins = 1;
+		if (hPtBackground->GetBinContent(binNum) > 0) {smoothVal = TMath::Log(hPtBackground->GetBinContent(binNum));}
+		else smoothVal = -10;	// by default say there's 10^-2 background events (originally) in this bin
+		double size = binNum*0.8;	// number of bins to smooth
+		if (size > avgSize) size = avgSize;
+		for (int j = 1; j < (int)size; j++ ) {
+			if (binNum-j > 0) {
+				nSmoothBins++;
+				double neighbourVal = hPtBackground->GetBinContent(binNum-j);
+				if (neighbourVal>0) {smoothVal+= TMath::Log(neighbourVal);}
+				else smoothVal+= negValue;
+			}
+			if (binNum+j < ptBinNumber) {
+				nSmoothBins++;
+				double neighbourVal = hPtBackground->GetBinContent(binNum+j);
+				if (neighbourVal>0) {smoothVal+= TMath::Log(hPtBackground->GetBinContent(binNum+j));}
+				else smoothVal+= negValue;
+			}
+		}
+		smoothVal /= (double)nSmoothBins;
+		smoothVal = TMath::Exp(smoothVal);
+		Double_t x = hPtBackground->GetXaxis()->GetBinCenter(binNum);
+		hPtBkgSmooth->Fill(x, smoothVal);
+		//std::cout << x << " " << smoothVal << std::endl;
+	}
+	hPtBkgSmooth->SetOption("hist");
+}
+
+void SmoothHist(TH1* hPtBackground, TH1* hPtBkgSmooth, int avgSize = 3) {
+	int ptBinNumber = hPtBkgSmooth->GetNbinsX();
+	for (int k = 0; k<ptBinNumber; k++) {
+		int binNum = k+1;
+		double smoothVal = hPtBackground->GetBinContent(binNum);
+		int nSmoothBins = 1;
+		double size = binNum*0.8;	// number of bins to smooth
+		if (size > avgSize) size = avgSize;
+		for (int j = 1; j < (int)size; j++ ) {
+			if (binNum-j > 0) {
+				nSmoothBins++;
+				smoothVal+= hPtBackground->GetBinContent(binNum-j);
+			}
+			if (binNum+j < ptBinNumber) {
+				nSmoothBins++;
+				smoothVal+= hPtBackground->GetBinContent(binNum+j);
+			}
+		}
+		smoothVal /= (double)nSmoothBins;
+		Double_t x = hPtBackground->GetXaxis()->GetBinCenter(binNum);
+		hPtBkgSmooth->Fill(x, smoothVal);
+		//std::cout << x << " " << smoothVal << std::endl;
+	}
+	hPtBkgSmooth->SetOption("hist");
+}
+
+void AddModel(RooWorkspace* ws, string period, Double_t mMax) {
 	// Define model
 	
 	//RooRealVar m("fTrkTrkM","M_{#mu#mu} (GeV/c2)",2.5,3.5);
 	RooRealVar m = *ws->var("fTrkTrkM");
 	
-	//Crystal ball for the J/psi
-	RooRealVar mean_jpsi("mean_jpsi","mean_jpsi",3.1,2.9,3.2);
-	RooRealVar sigma_jpsi("sigma_jpsi","sigma_jpsi",0.07,0,0.1);
-	/*
-	 // case of a simple CB
-	 RooRealVar alpha_jpsi("alpha_jpsi","alpha_jpsi",1);
-	 RooRealVar n_jpsi("n_jpsi","n_jpsi",5);
-	 RooCBShape *jpsi = new RooCBShape("jpsi","crystal ball PDF", m, mean_jpsi, sigma_jpsi,alpha_jpsi,n_jpsi);
-	 */
-	// 2-sided CB
-	double alphaL = 0.961839, nL = 7.521515, alphaR = 2.641260, nR = 3.325886;
-	if (period == "LHC16s") {alphaL = 0.993482; nL = 6.845735; alphaR = 2.669157; nR = 3.078395;}
-	RooRealVar alpha_jpsi_L("alpha_jpsi_L","alpha_jpsi_L", alphaL);
-	RooRealVar n_jpsi_L("n_jpsi_L","n_jpsi_L", nL);
-	RooRealVar alpha_jpsi_R("alpha_jpsi_R","alpha_jpsi_R", alphaR);
-	RooRealVar n_jpsi_R("n_jpsi_R","n_jpsi_R", nR);
-	ExtendedCrystalBall *jpsi = new ExtendedCrystalBall("jpsi","crystal ball PDF", m,
-														mean_jpsi, sigma_jpsi, alpha_jpsi_L,
-														n_jpsi_L, alpha_jpsi_R, n_jpsi_R);
-	
-	// Then Psi(2s)
-	double alphaL2 = 1.200001, nL2 = 3.017759, alphaR2 = 2.928444, nR2 = 2.256593;
-	if (period == "LHC16s") {alphaL2 = 1.192599; nL2 = 3.118819; alphaR2 = 2.927051; nR2 = 2.055075;}
-	
-	Double_t factorMean = 1.1902; // maybe to adjust
-								  //RooRealVar sigma_psi("sigma_psi","sigma_psi",0.07,0,0.1);
-								  // scaling factor Psi(2S) / JPsi
-	Double_t factorSigma = 1.05; // maybe to adjust
-	RooRealVar mean_scaling("mean_scaling", "", factorMean);
-	RooRealVar sigma_scaling("sigma_scaling", "", factorSigma);
-	RooFormulaVar mean_psi2s("mean_psi2s","mean_jpsi*mean_scaling",RooArgSet(mean_jpsi, mean_scaling));
-	RooFormulaVar sigma_psi2s("sigma_psi2s", "sigma_jpsi*sigma_scaling", RooArgSet(sigma_jpsi, sigma_scaling));
-	//RooRealVar sigma_psi("sigma_psi","sigma_psi",0.07, 0, 0.15);
-	RooRealVar alpha_psi2s_L("alpha_psi2s_L","alpha_psi2s_L",alphaL2);
-	RooRealVar n_psi2s_L("n_psi2s_L","n_psi2s_L",nL2);
-	RooRealVar alpha_psi2s_R("alpha_psi2s_R","alpha_psi2s_R",alphaR2);
-	RooRealVar n_psi2s_R("n_psi2s_R","n_psi2s_R",nR2);
-	//RooCBShape *psi = new RooCBShape("psi","crystal ball PDF",m,mean_psi,sigma_psi,alpha_psi,n_psi);
-	ExtendedCrystalBall *psi2s = new ExtendedCrystalBall("psi2s","crystal ball PDF", m,
-														 mean_psi2s, sigma_psi2s, alpha_psi2s_L,
-														 n_psi2s_L, alpha_psi2s_R, n_psi2s_R);
-	
-	//Exponential background
-	RooRealVar a1("a1","a1",-2,-10,-0.5);
-	RooExponential *bkg = new RooExponential("exp","exp",m,a1);
+	LoadMassFitFunctions(ws, period);
+	// Now collect m pdf
+	RooAbsPdf* jpsi = ws->pdf("jpsi");
+	RooAbsPdf* psi2s = ws->pdf("psi2s");
+	RooAbsPdf* bkg = ws->pdf("bkg");
 	
 	//RooRealVar fsig("fsig","signalPhi",0.1,0.,1.);
 	RooRealVar fsigJpsi("fsigJpsi","signalJPsi",1000,0.,1.e4);
@@ -112,45 +150,27 @@ void AddModel(RooWorkspace* ws, std::string period, Double_t mMax) {
 	ws->import(*model);
 }
 
-void AddPtModel(RooWorkspace* ws, std::string period, bool useMCtemplate, bool diss, Double_t ptMin, Double_t ptMax) {
+void AddPtJpsiModel(RooWorkspace* ws, string rootfilePathMC, string period, bool exp, bool exclusiveOnly) {
 	// Define fitting model for pt for J/Psi signal only
 	// Dissociative contribution and exclusive contribution
 	
 	RooRealVar pt = *ws->var("fTrkTrkPt");
+	LoadJpsiPtFitFunctions(ws, rootfilePathMC, period, exp, exclusiveOnly);
 	
-	//JPsi Exclusive
-	RooAbsPdf* jpsiExclusive = nullptr;
-	//RooRealVar bExc("bExc","bExc", 4, 3, 10);
-	RooRealVar bExc("bExc","bExc", 3.57);
-	if (period=="LHC16s") bExc.setVal(5.82);
-	if (useMCtemplate){
-		GetPtHistMC(ws, "/home/alidock/analysis-alice/p-Pb-2016/rootFiles", period, "kIncohJpsiToMu", ptMin, ptMax);
-		jpsiExclusive = ws->pdf("ptkIncohJpsiToMu");
-		jpsiExclusive->SetName("jpsiExc");
-	}
-	else {
-		// H1 formula
-		jpsiExclusive = new RooGenericPdf("jpsiExc","exclusive jPsi PDF","(fTrkTrkPt*exp(-bExc*(fTrkTrkPt**2)))",RooArgSet(pt,bExc)) ;
-	}
+	// Then pt pdf
+	RooAbsPdf* ptJpsiExclusive = ws->pdf("ptJpsiExclusive");
+	RooAbsPdf* ptJpsiDissociative = ws->pdf("ptJpsiDissociative");
+	RooAbsPdf* ptJpsiGammaPb = ws->pdf("ptJpsiGammaPb");
+	RooAbsPdf* ptJpsiInclusive = ws->pdf("ptJpsiInclusive");
 	
-	// JPsi Dissociative
-	/*
-	 // H1 formula
-	 RooRealVar bDiss("bDiss","bDiss",0.32, 0, 2);
-	 RooGenericPdf *jpsiDissociative = new RooGenericPdf("jpsiDiss","dissociative jPsi PDF","(fTrkTrkPt*exp(-bDiss*(fTrkTrkPt**2)))",RooArgSet(pt,bDiss)) ;
-	 */
-	// H1 formula (the second one, with the power law)
-	RooRealVar bDiss("bDiss","bDiss", 1.3, 0, 10);
-	RooRealVar nDiss("nDiss","nDiss", 4, 1, 20);
-	RooGenericPdf *jpsiDissociative = new RooGenericPdf("jpsiDiss","Dissociative jPsi PDF","(fTrkTrkPt*(1.+(fTrkTrkPt**2)*(bDiss/nDiss))**(-nDiss))",RooArgSet(pt, nDiss, bDiss)) ;
+	// Load yields
+	LoadYields(ws, period, exclusiveOnly);
+	RooRealVar* yieldJpsiExclusive = ws->var("yieldJpsiExclusive");
+	RooRealVar* yieldJpsiDissociative = ws->var("yieldJpsiDissociative");
+	RooRealVar* yieldJpsiGammaPb = ws->var("yieldJpsiGammaPb");
+	RooRealVar* yieldJpsiInclusive = ws->var("yieldJpsiInclusive");
 	
-	//RooRealVar fsig("fsig","signalPhi",0.1,0.,1.);
-	RooRealVar fsigJpsiExc("fsigJpsiExc","fsigJpsiExc",1000,0.,1.e5);
-	RooRealVar fsigJpsiDiss("fsigJpsiDiss","signalJPsiDiss",1000,0.,1.e5);
-	
-	RooAbsPdf* model = nullptr;
-	if (diss) model = new RooAddPdf("ptfit", "ptfit", RooArgList(*jpsiExclusive, *jpsiDissociative), RooArgList(fsigJpsiExc, fsigJpsiDiss), kFALSE);
-	else model = new RooAddPdf("ptfit", "ptfit", RooArgList(*jpsiExclusive), RooArgList(fsigJpsiExc), kFALSE);
+	RooAbsPdf* model = new RooAddPdf("ptfit", "ptfit", RooArgList(*ptJpsiExclusive, *ptJpsiDissociative, *ptJpsiGammaPb, *ptJpsiInclusive), RooArgList(*yieldJpsiExclusive, *yieldJpsiDissociative, *yieldJpsiGammaPb , *yieldJpsiInclusive), kFALSE);
 	
 	ws->import(*model);
 }
@@ -202,7 +222,6 @@ void DoSPlot(RooWorkspace* ws, Double_t mMax) {
 	n_jpsi_R->setConstant();
 	
 	a1->setConstant();
-	
 	
 	RooMsgService::instance().setSilentMode(true);
 	
@@ -258,47 +277,47 @@ void DoSPlot(RooWorkspace* ws, Double_t mMax) {
 
 
 //____________________________________
-void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, bool useCuts, bool diss, Double_t mMin, Double_t mMax, Double_t ptMin, Double_t ptMax){
+void MakePlots(RooWorkspace *ws, string rootfilePath, string rootfilePathMc, string period, bool exp, bool exclusiveOnly, bool useCuts, Double_t mMin, Double_t mMax, Double_t ptMin, Double_t ptMax){
 	
-	bool drawMC = false;
 	
 	int ptBinNumber = int(10*ptMax);
 	
 	//make some plots
-	TCanvas* cv = new TCanvas("splot","splot", 600,800) ;
-	cv->Divide(2,3);
+	TCanvas* cv = new TCanvas("splot","splot", 800, 800) ;
+	cv->Divide(3,3);
 	
 	//get what we need of the workspace
 	RooAbsPdf* model = ws->pdf("mfit");
 	RooAbsPdf* jPsiModel = ws->pdf("jpsi");
-	RooAbsPdf* bkgModel = ws->pdf("exp");
-	
-	RooAbsPdf* ptmodel = ws->pdf("ptfit");
-	RooAbsPdf* jpsiExc = ws->pdf("jpsiExc");
+	RooAbsPdf* bkgModel = ws->pdf("bkg");
 	
 	RooRealVar* m = ws->var("fTrkTrkM");
 	RooRealVar* pt = ws->var("fTrkTrkPt");
 	
 	RooDataSet* sdata = (RooDataSet*) ws->data("dataWithSWeights");
 	
+	RooRealVar* jPsiYield = ws->var("fsigJpsi");
+	RooRealVar* psi2sYield = ws->var("fsigPsi2s");
+	RooRealVar* bkgYield = ws->var("fbkg");
+	
+	// Draw mass fit
 	cv->cd(1);
 	gPad->SetLeftMargin(0.15) ;
 	gPad->SetBottomMargin(0.15) ;
-	RooRealVar* jPsiYield = ws->var("fsigJpsi");
-	RooRealVar* psi2sYield = ws->var("fsigPsi2s");
 	RooPlot* frame = m->frame();
-	sdata->plotOn(frame);
+	sdata->plotOn(frame, Binning(50));
 	model->plotOn(frame);
 	model->plotOn(frame, Components(*model), LineStyle(kDashed), LineColor(kBlue));
 	model->plotOn(frame, Components(*jPsiModel), LineStyle(kDashed), LineColor(kRed));
 	model->plotOn(frame, Components(*bkgModel), LineStyle(kDashed), LineColor(kGreen));
 	frame->SetTitle("Fit to model to discriminating variable");
 	double yMax0 = frame->GetMaximum();
-	double xPos = (mMin+mMax+0.2)/2;
-	if (mMax < mLimitPsi2s) xPos = mMin+(mMax-mMin)/3;
-	TText* txt0 = new TText(xPos,0.55*yMax0,Form("%.1f J/Psi", jPsiYield->getVal()));
-	//txt3->SetTextSize(0.05) ;
-	//frame->addObject(txt0) ;
+	double xPos = mMin+(mMax-mMin)*0.1;
+	//if (mMax < mLimitPsi2s) xPos = mMin+(mMax-mMin)/3;
+	TText* txt0 = new TText(xPos,0.7*yMax0,Form("%.1f J/Psi", jPsiYield->getVal()));
+	TText* txt1 = new TText(xPos,0.55*yMax0,Form("%.1f bkg", bkgYield->getVal()));
+	frame->addObject(txt0) ;
+	frame->addObject(txt1) ;
 	if (mMax > mLimitPsi2s) {
 		RooAbsPdf* psi2sModel = ws->pdf("psi2s");
 		model->plotOn(frame, Components(*psi2sModel), LineStyle(kDashed), LineColor(kOrange));
@@ -307,8 +326,8 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	}
 	frame->Draw();
 	
-	
-	cv->cd(3);
+	// Draw quality plots
+	cv->cd(4);
 	gPad->SetLeftMargin(0.15) ;
 	gPad->SetBottomMargin(0.15) ;
 	sdata->plotOn(frame, Binning(ptBinNumber));
@@ -334,107 +353,144 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	RooDataSet * dataw_bkg = new RooDataSet(sdata->GetName(),sdata->GetTitle(),sdata,*sdata->get(),0,"fbkg_sw") ;
 	
 	
-	// Draw pt with weights
+	// Draw J/Psi pt with weights
 	cv->cd(2);
 	gPad->SetLeftMargin(0.15) ;
 	gPad->SetBottomMargin(0.15) ;
 	RooPlot* frameJpsi = pt->frame() ;
+	int binningNum = 100;
+	if (exclusiveOnly) {binningNum = 40;}
+	dataw_jpsi->plotOn(frameJpsi, Name("jPsiData"), DataError(RooAbsData::SumW2), Binning(binningNum) ) ;
+	frameJpsi->SetTitle("p_{T} distribution for J/#Psi with weights");
+	
 	// Fit pt distrib of J/Psi with exclusive / dissociative components
-	ptmodel->fitTo(*dataw_jpsi, Extended(), Minos(true), Strategy(2));
-	dataw_jpsi->plotOn(frameJpsi, DataError(RooAbsData::SumW2), Binning(ptBinNumber) ) ;
-	//ptmodel->plotOn(frameJpsi);
-	//ptmodel->plotOn(frameJpsi, Components(*jpsiExc), LineStyle(kDashed), LineColor(kGreen));
+	RooAbsPdf* ptmodel = ws->pdf("ptfit");
+	RooAbsPdf* ptJpsiExclusive = ws->pdf("ptJpsiExclusive");
+	RooAbsPdf* ptJpsiDissociative = ws->pdf("ptJpsiDissociative");
+	RooAbsPdf* ptJpsiGammaPb = ws->pdf("ptJpsiGammaPb");
+	RooAbsPdf* ptJpsiInclusive = ws->pdf("ptJpsiInclusive");
+	ptmodel->fitTo(*dataw_jpsi, Extended(), Minos(true), Strategy(1), SumW2Error(true));
+	ptmodel->plotOn(frameJpsi, Name("ptfit"));
+	ptmodel->plotOn(frameJpsi, Components(*ptJpsiExclusive), LineStyle(kDashed), LineColor(kRed));
+	ptmodel->plotOn(frameJpsi, Components(*ptJpsiDissociative), LineStyle(kDashed), LineColor(kGreen));
+	ptmodel->plotOn(frameJpsi, Components(*ptJpsiGammaPb), LineStyle(kDashed), LineColor(kBlue));
+	ptmodel->plotOn(frameJpsi, Components(*ptJpsiInclusive), LineStyle(kDashed), LineColor(kGray));
 	
-	frameJpsi->SetTitle("pt distribution for J/#Psi with weights");
+	// Write chi2
+	double xPosJpsi = ptMax/3;
+	int nDof = ptmodel->getParameters(dataw_jpsi)->selectByAttrib("Constant",kFALSE)->getSize();
+	double yMax = frameJpsi->GetMaximum();
+	TLatex* txtChi = new TLatex(xPosJpsi/2, 0.93*yMax,Form("#chi^{2}/ndf = %.3f", frameJpsi->chiSquare( "ptfit", "jPsiData", nDof)));
+	frameJpsi->addObject(txtChi);
+	cout << endl << endl << endl << endl;
+	//frameJpsi->Print();
 	
-	/*
-	 RooRealVar* jPsiExclYield = ws->var("fsigJpsiExc");
-	 double yMax = frameJpsi->GetMaximum();
-	 TLatex* txt2 = new TLatex(1.9,0.75*yMax,Form("%.1f exclusive J/Psi", jPsiExclYield->getVal()));
-	 //txt3->SetTextSize(0.05) ;
-	 frameJpsi->addObject(txt2) ;
-	 // Write b parameters on the plot
-	 RooRealVar* bExc = ws->var("bExc");
-	 TLatex* txtExc = new TLatex(1.9,0.45*yMax,Form("b_{exc} = %.2f #pm %.2f", bExc->getVal(), bExc->getError()));
-	 frameJpsi->addObject(txtExc) ;
-	 if (diss) {
-	 RooAbsPdf* jpsiDiss = ws->pdf("jpsiDiss");
-	 RooRealVar* jPsiDissYield = ws->var("fsigJpsiDiss");
-	 RooRealVar* bDiss = ws->var("bDiss");
-	 RooRealVar* nDiss = ws->var("nDiss");
-	 ptmodel->plotOn(frameJpsi, Components(*jpsiDiss), LineStyle(kDashed), LineColor(kRed));
-	 TText* txt = new TText(1.9,0.65*yMax,Form("%.1f dissociative J/Psi", jPsiDissYield->getVal()));
-	 TLatex* txtDiss = new TLatex(1.9,0.35*yMax,Form("b_{diss} = %.2f #pm %.2f", bDiss->getVal(), bDiss->getError()));
-	 frameJpsi->addObject(txt) ;
-	 TLatex* txtDiss2 = new TLatex(1.9,0.25*yMax,Form("n_{diss} = %.2f #pm %.2f", nDiss->getVal(), nDiss->getError()));
-	 frameJpsi->addObject(txtDiss) ;
-	 frameJpsi->addObject(txtDiss2) ;
-	 }
-	 */
+	// Write parameters on plot
+	RooRealVar* yieldJpsiExclusive = ws->var("yieldJpsiExclusive");
+	RooRealVar* yieldJpsiDissociative = ws->var("yieldJpsiDissociative");
+	RooRealVar* yieldJpsiGammaPb = ws->var("yieldJpsiGammaPb");
+	RooRealVar* yieldJpsiInclusive = ws->var("yieldJpsiInclusive");
+	TLatex* txt2 = new TLatex(xPosJpsi,0.85*yMax,Form("%.1f #pm %.1f exclusive J/Psi", yieldJpsiExclusive->getVal(), yieldJpsiExclusive->getError()));
+	frameJpsi->addObject(txt2) ;
+	TLatex* txt = new TLatex(xPosJpsi,0.77*yMax,Form("%.1f #pm %.1f dissociative J/Psi", yieldJpsiDissociative->getVal(), yieldJpsiDissociative->getError()));
+	frameJpsi->addObject(txt) ;
+	TLatex* txt4 = new TLatex(xPosJpsi,0.69*yMax,Form("%.1f #pm %.1f #gamma-Pb J/Psi", yieldJpsiGammaPb->getVal(), yieldJpsiGammaPb->getError()));
+	frameJpsi->addObject(txt4) ;
+	TLatex* txt3 = new TLatex(xPosJpsi,0.61*yMax,Form("%.1f #pm %.1f inclusive J/Psi", yieldJpsiInclusive->getVal(), yieldJpsiInclusive->getError()));
+	if (!exclusiveOnly && period == "LHC16r") frameJpsi->addObject(txt3) ;
+	
+	
+	// Write fit function parameters on the plot
+	double xPosJpsi2 = xPosJpsi*1.2;
+	RooRealVar* bExc = ws->var("bExc");
+	TLatex* txtExc = new TLatex(xPosJpsi2,0.45*yMax,Form("b_{exc} = %.2f #pm %.2f", bExc->getVal(), bExc->getError()));
+	frameJpsi->addObject(txtExc) ;
+	RooRealVar* bDiss = ws->var("bDiss");
+	
+	TLatex* txtDiss = new TLatex(xPosJpsi2,0.35*yMax,Form("b_{diss} = %.2f #pm %.2f", bDiss->getVal(), bDiss->getError()));
+	frameJpsi->addObject(txtDiss) ;
+	
+	if (!exp) {
+		RooRealVar* nDiss = ws->var("nDiss");
+		TLatex* txtDiss2 = new TLatex(xPosJpsi2,0.25*yMax,Form("n_{diss} = %.2f #pm %.2f", nDiss->getVal(), nDiss->getError()));
+		frameJpsi->addObject(txtDiss2) ;
+	}
+	RooRealVar* pt0 = ws->var("pt0");
+	RooRealVar* nInc = ws->var("nInc");
+	TLatex* txtInc1 = new TLatex(xPosJpsi2,0.15*yMax,Form("p_{0} = %.2f #pm %.2f", pt0->getVal(), pt0->getError()));
+	TLatex* txtInc2 = new TLatex(xPosJpsi2,0.05*yMax,Form("n_{inc} = %.2f #pm %.2f", nInc->getVal(), nInc->getError()));
+	if (!exclusiveOnly && period == "LHC16r") {frameJpsi->addObject(txtInc1) ; frameJpsi->addObject(txtInc2) ;}
+	
+	
 	frameJpsi->Draw() ;
 	
+	// Draw Psi(2s) pt with sweights
 	if (mMax > mLimitPsi2s) {
-		cv->cd(4);
+		cv->cd(6);
 		gPad->SetLeftMargin(0.15) ;
 		gPad->SetBottomMargin(0.15) ;
 		// create weighted data set for Psi(2s)
 		RooDataSet * dataw_psi2s = new RooDataSet(sdata->GetName(),sdata->GetTitle(),sdata,*sdata->get(),0,"fsigPsi2s_sw") ;
 		RooPlot* framePsi2s = pt->frame() ;
-		dataw_psi2s->plotOn(framePsi2s, DataError(RooAbsData::SumW2), Binning(ptBinNumber) ) ;
-		framePsi2s->SetTitle("pt distribution for #Psi(2s) with weights");
+		dataw_psi2s->plotOn(framePsi2s, DataError(RooAbsData::SumW2), Binning(50) ) ;
+		framePsi2s->SetTitle("p_{T} distribution for #Psi(2s) with weights");
 		framePsi2s->Draw() ;
 	}
+	
+	// Draw background pt with sweights
+	cv->cd(3);
+	gPad->SetLeftMargin(0.15) ;
+	gPad->SetBottomMargin(0.15) ;
+	RooPlot* frameBkg = pt->frame() ;
+	frameBkg->SetTitle("p_{T} distribution for background with weights");
+	frameBkg->GetXaxis()->SetRangeUser(0,3);
+	
+	TLegend* legend = new TLegend(0.4, 0.6, 0.9, 0.9);
+	legend->SetTextSize(0.05);
+	legend->SetFillColor(kWhite);
+	legend->SetLineColor(kWhite);
+	
+	dataw_bkg->plotOn(frameBkg,DataError(RooAbsData::SumW2), Binning(50)) ;
+	
+	// Draw fit of pt
+	// Add MC templates for (gammma gamma to mu mu) for comparison
+	TCut cutMc = Form("fTrkTrkM > %f && fTrkTrkM < %f", mMin, mMax);
+	GetPtHistMC(ws, rootfilePathMc, period, "kTwoGammaToMuLow", ptMin, ptMax, cutMc);
+	GetV0Template(ws, rootfilePath, period);
+	RooAbsPdf* pdfV0 = ws->pdf("ptV0C7");
+	RooAbsPdf* pdfMC = ws->pdf("ptkTwoGammaToMuLow");
+	pdfMC->SetName("ptMC");
+	RooRealVar* yieldMC = new RooRealVar("yieldMC","yieldMC", 10, 0, 1000);
+	RooRealVar* yieldV0 = new RooRealVar("yieldV0","yieldV0", 40, 0, 1000);
+	
+	RooArgList* pdfList = new RooArgList(*pdfMC, *pdfV0);
+	RooArgList yieldList = RooArgList(*yieldMC, *yieldV0);
+	
+	//RooArgList* pdfList = new RooArgList(*pdfMC);
+	//RooArgList yieldList = RooArgList(*yieldMC);
+	
+	RooAbsPdf* fitModel = new RooAddPdf("modelBkg", "modelBkg", *pdfList, yieldList, kFALSE);
+	
+	frameBkg->Draw() ;
+	frameBkg->Print("v");
+	
+	legend->Draw("same");
 	
 	
 	// Plot isolation for QCD component.
 	// Eg. plot all events weighted by the sWeight for the QCD component.
 	// The SPlot class adds a new variable that has the name of the corresponding
 	// yield + "_sw".
-	cv->cd(6);
-	gPad->SetLeftMargin(0.15) ;
-	gPad->SetBottomMargin(0.15) ;
-	RooPlot* frameBkg = pt->frame() ;
-	dataw_bkg->plotOn(frameBkg,DataError(RooAbsData::SumW2), Binning(ptBinNumber) ) ;
 	
-	RooRealVar* bkgYield = ws->var("fbkg");
-	frameBkg->SetTitle("pt distribution for background with weights");
-	double yMax2 = frameBkg->GetMaximum();
-	TLatex* txtBkg = new TLatex(1.9,0.45*yMax2,Form("#Bkg = %.2f #pm %.2f", bkgYield->getVal(), bkgYield->getError()));
-	frameBkg->addObject(txtBkg) ;
-	
-	// Add MC templates for (gammma gamma to mu mu) for comparison
-	if (drawMC) {
-		GetPtHistMC(ws, period, "kTwoGammaToMuLow", ptMin, ptMax);
-		GetPtHistMC(ws, period, "kTwoGammaToMuMedium", ptMin, ptMax);
-		RooAbsPdf* ptMuLow = ws->pdf("ptkTwoGammaToMuLow");
-		RooAbsPdf* ptMuMedium = ws->pdf("ptkTwoGammaToMuMedium");
-		RooRealVar fsigMuLow("fsigMuLow","signalMuLow",100,0.,2.e3);
-		RooRealVar fsigMuMedium("fsigMuMedium","signalMuMedium",100,0.,2.e3);
-		
-		RooAbsPdf* modelMuLow = new RooAddPdf("ptfitMuLow", "ptfitMuLow", RooArgList(*ptMuLow), RooArgList(fsigMuLow), kFALSE);
-		RooAbsPdf* modelMuMedium = new RooAddPdf("ptfitMuMedium", "ptfitMuMedium", RooArgList(*ptMuMedium), RooArgList(fsigMuMedium), kFALSE);
-		modelMuLow->fitTo(*dataw_bkg, Extended());
-		modelMuMedium->fitTo(*dataw_bkg, Extended());
-		modelMuLow->plotOn(frameBkg, LineStyle(kDashed), LineColor(8));
-		modelMuMedium->plotOn(frameBkg, LineStyle(kDashed), LineColor(9));
-	}
-	frameBkg->Draw() ;
-	frameBkg->Print("v");
-	//return;
-	
-	TLegend* legend = new TLegend(0.5, 0.6, 0.9, 0.9);
-	legend->SetFillColor(kWhite);
-	legend->SetLineColor(kWhite);
-	if (drawMC) {
-		legend->AddEntry(frameBkg->findObject("ptfitMuLow_Norm[fTrkTrkPt]"), "MuLow","L");
-		legend->AddEntry(frameBkg->findObject("ptfitMuMedium_Norm[fTrkTrkPt]"), "MuMedium","L");
-	}
-	legend->Draw("same");
 	
 	// Save plots
-	std::string cutType = "";
+	string cutType = "";
 	if (!useCuts) cutType = "-nocuts";
-	cv->SaveAs(Form("Plots/Splot-%s%s-%.1f-%.1f.pdf", period.c_str(), cutType.c_str(), mMin, mMax));
+	string suffix = "";
+	if (exp) suffix = "exp";
+	else suffix = "power-law";
+	if (exclusiveOnly) suffix += "-exclusive-only";
+	cv->SaveAs(Form("Plots/%s/Splot%s-%.1f-%.1f-%s.pdf", period.c_str(), cutType.c_str(), mMin, mMax, suffix.c_str()));
 	
 	/*
 	 // Look at V0CCounts
@@ -457,66 +513,96 @@ void MakePlots(RooWorkspace *ws, std::string rootfilePath, std::string period, b
 	 */
 	
 	// And save pt shapes
-	TFile* fNewTemplates = new TFile(Form("%s/sPlotTemplates-%s.root", rootfilePath.c_str(), period.c_str()),"RECREATE");
-	if (diss) {
-		RooAbsPdf* jpsiDiss = ws->pdf("jpsiDiss");
-		TH1* hPtDissociative = jpsiDiss->createHistogram("hPtDissociative",*pt, Binning(ptBinNumber, 0, ptMax)) ;
-		hPtDissociative->Write();
-	}
-	TH1* hPtExclusive = jpsiExc->createHistogram("hPtExclusive",*pt, Binning(ptBinNumber, 0, ptMax)) ;
+	string suffix2 = "";
+	if (exclusiveOnly) suffix2 = "-exclusive-only";
+	TFile* fNewTemplates = new TFile(Form("%s/sPlotTemplates-%s%s.root", rootfilePath.c_str(), period.c_str(), suffix2.c_str()),"RECREATE");
+	TH1* hPtDissociative = ptJpsiDissociative->createHistogram("hPtDissociative",*pt, IntrinsicBinning(false), Binning(ptBinNumber, 0, ptMax)) ;
+	hPtDissociative->Write();
+	
+	TH1* hPtExclusive = ptJpsiExclusive->createHistogram("hPtExclusive",*pt, IntrinsicBinning(false), Binning(ptBinNumber, 0, ptMax)) ;
+	TH1* hPtBackground = dataw_bkg->createHistogram("hPtBackground",*pt, IntrinsicBinning(false), Binning(ptBinNumber, 0, ptMax)) ;
+	
+	TH1* hPtMc = pdfMC->createHistogram("hPtMc",*pt, IntrinsicBinning(false), Binning(ptBinNumber, 0, ptMax)) ;
+	
+	// Create template of extra background = not two gamma to mu
+	TH1F* hSubtraction = new TH1F("hSubtraction", "Bkg - MC", ptBinNumber, 0, ptMax);
+	SubtractBkg(hPtMc, hPtBackground, hSubtraction);
+	TH1* hPtExtraBackground = pdfV0->createHistogram("hPtExtraBackground",*pt, IntrinsicBinning(false), Binning(ptBinNumber, 0, ptMax)) ;
+	TH1F* hSubSmooth = new TH1F("hSubSmooth", "Smoothed Bkg - MC", ptBinNumber, 0, ptMax);
+	SmoothHist(hSubtraction, hSubSmooth, 4);
+	
+	// Now write all these histograms
+	fNewTemplates->cd();
+	hPtBackground->SetOption("hist");
+	hPtExtraBackground->SetOption("hist");
 	hPtExclusive->Write();
-	TH1* hPtBackground = dataw_bkg->createHistogram("hPtBackground",*pt, Binning(ptBinNumber, 0, ptMax)) ;
 	hPtBackground->Write();
+	hPtExtraBackground->Write();
+	hSubtraction->Write();
+	hSubSmooth->Write();
+	hPtMc->SetOption("hist");
+	hPtMc->Write();
 	
 	// Create a smooth histogram (the size of the smooting depends on pt, should be logarithmic so that the smoothing is a lot more agressive for high pt)
 	TH1* hPtBkgSmooth = new TH1F("hPtBkgSmooth", "smoothed background pt template", ptBinNumber, 0, ptMax);
-	double negValue = -10;	// in case the value is negative, pb log(neg) so set log to this negvalue
-	for (int k = 0; k<ptBinNumber; k++) {
-		int binNum = k+1;
-		double smoothVal = 0;
-		int nSmoothBins = 1;
-		if (hPtBackground->GetBinContent(binNum) > 0) {smoothVal = TMath::Log(hPtBackground->GetBinContent(binNum));}
-		else smoothVal = -10;	// by default say there's 10^-2 background events (originally) in this bin
-		double size = binNum*0.8;	// number of bins to smooth
-		if (size > 10) size = 10.;
-		for (int j = 1; j < (int)size; j++ ) {
-			if (binNum-j > 0) {
-				nSmoothBins++;
-				double neighbourVal = hPtBackground->GetBinContent(binNum-j);
-				if (neighbourVal>0) {smoothVal+= TMath::Log(neighbourVal);}
-				else smoothVal+= negValue;
-			}
-			if (binNum+j < ptBinNumber) {
-				nSmoothBins++;
-				double neighbourVal = hPtBackground->GetBinContent(binNum+j);
-				if (neighbourVal>0) {smoothVal+= TMath::Log(hPtBackground->GetBinContent(binNum+j));}
-				else smoothVal+= negValue;
-			}
-		}
-		smoothVal /= (double)nSmoothBins;
-		smoothVal = TMath::Exp(smoothVal);
-		Double_t x = hPtBackground->GetXaxis()->GetBinCenter(binNum);
-		hPtBkgSmooth->Fill(x, smoothVal);
-		//std::cout << x << " " << smoothVal << std::endl;
-		
-	}
+	SmoothHistLog(hPtBackground, hPtBkgSmooth, 7);
+	
 	fNewTemplates->cd();
 	hPtBkgSmooth->Write();
-	//fNewTemplates->Close();
-	
-	TCanvas* cv3 = new TCanvas();
-	hPtBackground->Draw("hist");
-	hPtBkgSmooth->SetLineColor(kRed);
-	hPtBkgSmooth->Draw("hist same");
-	cv3->SaveAs(Form("Plots/pt-splotsmooth-%s.pdf", period.c_str()));
-	
 	fNewTemplates->Close();
+}
+
+
+void DrawBkgPt(string rootfilePath, string period, bool exclusiveOnly) {
 	
+	gStyle->SetTextSize(.04);
 	
+	string suffix = "";
+	if (exclusiveOnly) suffix = "-exclusive-only";
+	TFile* fTemplates = new TFile(Form("%s/sPlotTemplates-%s%s.root", rootfilePath.c_str(), period.c_str(), suffix.c_str()),"READ");
+	
+	TH1* hPtBackground = (TH1*)fTemplates->Get("hPtBackground__fTrkTrkPt");
+	hPtBackground->SetTitle("Background p_{T} distribution with sPlot");
+	TH1* hSubtraction = (TH1*)fTemplates->Get("hSubtraction");
+	TH1* hSubSmooth = (TH1*)fTemplates->Get("hSubSmooth");
+	TH1* hPtMc = (TH1*)fTemplates->Get("hPtMc__fTrkTrkPt");
+	TCanvas* cv3 = new TCanvas();
+	gPad->SetLeftMargin(0.15);
+	gPad->SetBottomMargin(0.15);
+	hPtBackground->SetLineColor(kBlack);
+	hPtBackground->SetLineWidth(3);
+	hPtBackground->Draw("hist");
+	hPtMc->SetLineColor(kRed);
+	hPtMc->SetLineWidth(2);
+	hSubtraction->SetLineColor(kRed+2);
+	hSubtraction->SetLineWidth(2);
+	hSubSmooth->SetLineColor(kBlue);
+	hSubSmooth->SetLineWidth(3);
+	hPtMc->Draw("hist same");
+	hSubtraction->Draw("hist same");
+	hSubSmooth->Draw("hist same");
+	/*
+	 hPtBkgSmooth->SetLineColor(kRed);
+	 hPtBkgSmooth->Draw("hist same");
+	 */
+	
+	// Write number of candidates
+	Double_t yMax = hPtBackground->GetMaximum();
+	TLatex* t1 = new TLatex(0.5, 0.8*yMax, Form("Number of bkg = %.1f", hPtBackground->Integral()));
+	TLatex* t2 = new TLatex(0.5, 0.7*yMax, Form("Number of #gamma#gamma = %.1f", hPtMc->Integral()));
+	t1->Draw(); t2->Draw();
+	
+	TLegend* lgd = new TLegend(0.5, 0.5, 0.9, 0.9);
+	lgd->AddEntry(hPtBackground, "Data with sPlot", "l");
+	lgd->AddEntry(hPtMc, "MC #gamma#gamma", "l");
+	lgd->AddEntry(hSubtraction, "Subtraction: Data - MC", "l");
+	lgd->AddEntry(hSubSmooth, "Smoothed subtraction", "l");
+	lgd->Draw();
+	cv3->SaveAs(Form("Plots/%s/pt-splotsmooth%s.pdf", period.c_str(), suffix.c_str()));
 }
 
 //____________________________________
-void DrawWeights(RooWorkspace *ws, std::string rootfilePath, std::string period, bool useCuts, bool diss, Double_t mMin, Double_t mMax, Double_t ptMin, Double_t ptMax){
+void DrawWeights(RooWorkspace *ws){
 	
 	
 	//get what we need of the workspace
@@ -529,8 +615,7 @@ void DrawWeights(RooWorkspace *ws, std::string rootfilePath, std::string period,
 	const int nEntries = (int) sData->sumEntries();
 	Double_t massForWeights[nEntries], ptForWeights[nEntries], jPsiWeight[nEntries], bkgWeight[nEntries];
 	
-	for (Int_t i=0; i < (Int_t)nEntries; i ++ )
-	{
+	for (Int_t i=0; i < (Int_t)nEntries; i ++ ) {
 		massForWeights[i] = sData->get(i)->getRealValue("fTrkTrkM");
 		ptForWeights[i] = sData->get(i)->getRealValue("fTrkTrkPt");
 		
@@ -561,57 +646,61 @@ void DrawWeights(RooWorkspace *ws, std::string rootfilePath, std::string period,
 	gWeightsMBkg->GetYaxis()->SetTitle("Bkg sWeights");
 	gWeightsPtBkg->GetYaxis()->SetTitle("Bkg sWeights");
 	
-	TCanvas* cv = new TCanvas("sweights","sweights", 800, 1200) ;
-	cv->Divide(2,3);
-	
-	cv->cd(1);
-	gPad->SetLeftMargin(0.2);
-	gWeightsMJpsi->Draw("A*");
-	
-	cv->cd(2);
-	gPad->SetLeftMargin(0.2);
-	gWeightsPtJpsi->Draw("A*");
-	
-	cv->cd(3);
-	gPad->SetLeftMargin(0.2);
-	gWeightsMBkg->Draw("A*");
-	
-	cv->cd(4);
-	gPad->SetLeftMargin(0.2);
-	gWeightsPtBkg->Draw("A*");
-	
-	// 2d histograms
-	TH2F* hWeightsBkg2d = new TH2F("hWeightsBkg2d", "Background sWeights)", 50, mMin, mMax, 100, ptMin, 4.5);
-	TH2F* hWeightsJpsi2d = new TH2F("hWeightsJpsi2d", "J/Psi sWeights", 50, mMin, mMax, 100, ptMin, 4.5);
-	for (int i = 0; i<nEntries; i++) {
-		hWeightsBkg2d->Fill(massForWeights[i], ptForWeights[i], bkgWeight[i]);
-		hWeightsJpsi2d->Fill(massForWeights[i], ptForWeights[i], jPsiWeight[i]);
-	}
-	cv->cd(5);
-	gPad->SetLeftMargin(0.2);
-	hWeightsBkg2d->GetXaxis()->SetTitle("Mass");
-	hWeightsBkg2d->GetYaxis()->SetTitle("Pt");
-	//hWeightsBkg2d->Draw("CONTZ");
-	hWeightsBkg2d->Draw("COLZ");
-	
-	cv->cd(6);
-	gPad->SetLeftMargin(0.2);
-	hWeightsJpsi2d->GetXaxis()->SetTitle("Mass");
-	hWeightsJpsi2d->GetYaxis()->SetTitle("Pt");
-	hWeightsJpsi2d->Draw("COLZ");
-	
-	
-	
-	// Save plots
-	std::string cutType = "";
-	if (!useCuts) cutType = "-nocuts";
-	cv->SaveAs(Form("Plots/Splot-weights-%s%s-%.1f-%.1f.pdf", period.c_str(), cutType.c_str(), mMin, mMax));
+	/*
+	 TCanvas* cv = new TCanvas("sweights","sweights", 800, 1200) ;
+	 cv->Divide(2,3);
+	 
+	 cv->cd(1);
+	 gPad->SetLeftMargin(0.2);
+	 gWeightsMJpsi->Draw("A*");
+	 
+	 cv->cd(2);
+	 gPad->SetLeftMargin(0.2);
+	 gWeightsPtJpsi->Draw("A*");
+	 
+	 cv->cd(3);
+	 gPad->SetLeftMargin(0.2);
+	 gWeightsMBkg->Draw("A*");
+	 
+	 cv->cd(4);
+	 gPad->SetLeftMargin(0.2);
+	 gWeightsPtBkg->Draw("A*");
+	 
+	 // 2d histograms
+	 TH2F* hWeightsBkg2d = new TH2F("hWeightsBkg2d", "Background sWeights)", 50, mMin, mMax, 100, ptMin, 4.5);
+	 TH2F* hWeightsJpsi2d = new TH2F("hWeightsJpsi2d", "J/Psi sWeights", 50, mMin, mMax, 100, ptMin, 4.5);
+	 for (int i = 0; i<nEntries; i++) {
+	 hWeightsBkg2d->Fill(massForWeights[i], ptForWeights[i], bkgWeight[i]);
+	 hWeightsJpsi2d->Fill(massForWeights[i], ptForWeights[i], jPsiWeight[i]);
+	 }
+	 cv->cd(5);
+	 gPad->SetLeftMargin(0.2);
+	 hWeightsBkg2d->GetXaxis()->SetTitle("Mass");
+	 hWeightsBkg2d->GetYaxis()->SetTitle("Pt");
+	 //hWeightsBkg2d->Draw("CONTZ");
+	 hWeightsBkg2d->Draw("COLZ");
+	 
+	 cv->cd(6);
+	 gPad->SetLeftMargin(0.2);
+	 hWeightsJpsi2d->GetXaxis()->SetTitle("Mass");
+	 hWeightsJpsi2d->GetYaxis()->SetTitle("Pt");
+	 hWeightsJpsi2d->Draw("COLZ");
+	 
+	 // Save plots
+	 string cutType = "";
+	 if (!useCuts) cutType = "-nocuts";
+	 cv->SaveAs(Form("Plots/Splot-weights-%s%s-%.1f-%.1f.pdf", period.c_str(), cutType.c_str(), mMin, mMax));
+	 */
 }
 
-void Splot(std::string rootfilePath = "", std::vector<std::string> periods = {"LHC16r", "LHC16s"}, Double_t mMin = 2., Double_t mMax = 3.5, Double_t ptMin = 0., Double_t ptMax = 3.5, bool useCuts = true) {
+void Splot(string rootfilePath = "", string rootfilePathMc = "", std::vector<string> periods = {"LHC16r", "LHC16s"}) {
 	
-	gROOT->ProcessLine(".L ExtendedCrystalBall.cxx+") ;
-	gSystem->Load("./ExtendedCrystalBall_cxx.so") ;
+	Double_t mMin = 2., mMax = 3.5, ptMin = 0., ptMax = 3.5;
+	bool useCuts = true, exp = false, exclusiveOnly = false;
+	bool logScale = false, drawPulls = false;
+
+	gROOT->ProcessLine(".L Include/ExtendedCrystalBall.cxx+") ;
+	gSystem->Load("./Include/ExtendedCrystalBall_cxx.so") ;
 	
 	gStyle->SetOptStat(0);
 	gStyle->SetTitleFontSize(.05);
@@ -622,14 +711,20 @@ void Splot(std::string rootfilePath = "", std::vector<std::string> periods = {"L
 	//gStyle->SetMarkerSize(0.5);
 	//gStyle->SetMarkerStyle(20);
 	
-	bool diss = true;
-	
-	
 	const int nPeriod = periods.size();
 	for (int k = 0; k<nPeriod; k++) {
-		std::string period = periods[k];
+		string period = periods[k];
+		if ( ! Initiate(period, mMin, mMax, ptMin, ptMax, useCuts, logScale, drawPulls, exp, exclusiveOnly)) {cout << "Something wrong at initialisation"; return;}
 		
-		std::list<TCut> mCutList = DefineCuts(period);
+		if (exclusiveOnly) {
+			if (period == "LHC16r") ptMax = 1.8;
+			else ptMax = 0.8;
+		}
+		else {
+			if (period == "LHC16s") ptMax = 3;
+		}
+		
+		std::list<TCut> mCutList = DefineCuts(period, exclusiveOnly);
 		// Define cuts
 		TCut mCut = "";
 		
@@ -641,20 +736,20 @@ void Splot(std::string rootfilePath = "", std::vector<std::string> periods = {"L
 		
 		// Connect to the tree
 		TTree* fAnaTree = (TTree*)fAna->Get("MyTask/fAnaTree");
-		
 		//Create a new workspace to manage the project
 		RooWorkspace* wspace = new RooWorkspace("myJpsi");
 		ImportDataSet(wspace, fAnaTree, mCut, mMin, mMax, ptMin, ptMax);
 		AddModel(wspace, period, mMax);
-		AddPtModel(wspace, period, false, diss, ptMin, ptMax);	// false = don't use MC template but H1 function
+		AddPtJpsiModel(wspace, rootfilePathMc, period, exp, exclusiveOnly);
 		wspace->Print();
 		
 		DoSPlot(wspace, mMax);
-		MakePlots(wspace, rootfilePath, period, useCuts, diss, mMin, mMax, ptMin, ptMax);
-		DrawWeights(wspace, rootfilePath, period, useCuts, diss, mMin, mMax, ptMin, ptMax);
+		MakePlots(wspace, rootfilePath, rootfilePathMc, period, exp, exclusiveOnly, useCuts, mMin, mMax, ptMin, ptMax);
+		//DrawWeights(wspace);
 		
 		//cleanup
 		delete wspace;
+		DrawBkgPt(rootfilePath, period, exclusiveOnly);
 	}
 	
 	

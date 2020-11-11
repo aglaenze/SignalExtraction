@@ -1,5 +1,52 @@
 #!/bin/bash
 
+## variables
+periods="{\"LHC16r\", \"LHC16s\"}"
+#periods="{\"LHC16s\"}"
+
+mMin=2.5
+mMax=3.5
+
+#mMin=2.7
+#mMax=3.4
+
+ptMin=0
+ptMax=5
+useCuts=1
+logScale=0
+drawPulls=0			# draws graphs data-fit, in any case the graphs (data-fit)/sigma are plotted
+exp=1				# if true, use the exponential for the dissociative contribution. if false, use the power law
+exclusiveOnly=0
+
+## end of variables
+
+initiateParameters() {
+if test -f $inputfile
+then
+rm $inputfile
+fi
+
+touch $inputfile
+echo "
+bExc = $bExc
+gammaPbYield = $gammaPbYield
+
+mMin = $mMin
+mMax = $mMax
+
+ptMin = $ptMin
+ptMax = $ptMax
+
+useCuts = $useCuts
+logScale = $logScale
+drawPulls = $drawPulls		# draws graphs data-fit, in any case the graphs (data-fit)/sigma are plotted
+exp = $exp	# if true, use the exponential for the dissociative contribution. if false, use the power law
+exclusiveOnly = $exclusiveOnly
+" >> $inputfile
+
+}
+
+
 delete() {
 for entry in $filesToDelete
 do
@@ -13,17 +60,7 @@ done
 
 clean()
 {
-filesToDelete=*.so
-delete
-filesToDelete=*.d
-delete
-filesToDelete=*.pcm
-delete
-filesToDelete=*ACLiC*
-delete
-filesToDelete=*.in
-delete
-filesToDelete=*.out
+filesToDelete="*.so *.d *.pcm *ACLiC* *.in *.out Include/*.so Include/*.d Include/*.pcm"
 delete
 }
 
@@ -33,53 +70,70 @@ muonfilter=std
 
 #I have a diffrent folder inside "rootFiles/" for each of the muon filter processed in the analysis
 #in alidock
-path_to_rootfiles_data=\"/home/alidock/analysis-alice/p-Pb-2016/rootFiles/$muonfilter\"
-path_to_rootfiles_MC=\"/home/alidock/analysis-alice/p-Pb-2016/rootFiles/MC-$muonfilter\"
+#path="/Users/aglaenzer/alidock/analysis-alice/p-Pb-2016/rootFiles"
 #outside alidock
-#path_to_rootfiles_data=\"/Users/aglaenzer/alidock/analysis-alice/p-Pb-2016/rootFiles/$muonfilter\"
-#path_to_rootfiles_MC=\"/Users/aglaenzer/alidock/analysis-alice/p-Pb-2016/rootFiles\"
+path="/Users/aglaenzer/alidock/analysis-alice/p-Pb-2016/rootFiles"
+path_to_rootfiles_data=\"${path}/$muonfilter\"
+path_to_rootfiles_MC=\"${path}/MC-$muonfilter\"
 
-# Also, I asume that the format of the root file names is
+# It is assumed that the format of the root file names is
 # - AnalysisResults_LHC16r_MC_kIncohJpsiToMu.root for MC data
 # - AnalysisResults_LHC16r.root for real data
 
-periods="{\"LHC16r\", \"LHC16s\"}"
-#periods="{\"LHC16r\"}"
-
-#mMin=2.5
-#mMax=3.9
-
-mMin=2.5
-mMax=3.5
-
-ptMin=0
-ptMax=15
-#useCuts=true
-useCuts=true
-logScale=false
-drawPulls=false		# draws graphs data-fit, in any case the graphs (data-fit)/sigma are plotted
-exp=false
 
 
 echo $muonfilter
 echo $periods
+
+run() {
+clean
+#root -l -q "Splot.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods)"
+clean
+root -l -q "TwoDPlot.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods)"
+clean
+exit
+}
+
+inputfile="input-LHC16r.txt"
+bExc=3.6
+gammaPbYield=57
+initiateParameters
+
+inputfile="input-LHC16s.txt"
+bExc=5.3
+gammaPbYield=86
+initiateParameters
+
+
+exclusiveOnly=false
+exp=true
+run
+exp=false
+run
+exit
+exclusiveOnly=false
+exp=true
+run
+exp=false
+run
+exit
+
+
+
+clean
+mMin=1.3
+mMax=2.3
+root -l -q "BackgroundTest.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods, $mMin, $mMax, $ptMin, $ptMax)"
+clean
+exit
+
 
 
 clean
 #root -l -q "GetTemplates.C+($path_to_rootfiles_data, $periods, $mMin, $mMax, $ptMin, $ptMax)"
 clean
 #exit
-#root -l -q "Splot.C+($path_to_rootfiles_data, $periods, $mMin, $mMax, $ptMin, $ptMax, $useCuts)"
-clean
-root -l -q "TwoDPlot.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods, $mMin, $mMax, $ptMin, $ptMax, $useCuts, $logScale, $exp, $drawPulls)"
-clean
-exit
 
 
-
-
-root -l -q "TailParameters.C+($path_to_rootfiles_MC, $periods, $logScale)"
+root -l -q "NakedPlot.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods, $mMin, $mMax, $ptMin, $ptMax, $useCuts)"
 clean
-root -l -q "Splot.C+($path_to_rootfiles_data, $periods, $mMin, $mMax, $ptMin, $ptMax, $useCuts)"
-clean
-root -l -q "TwoDPlot.C+($path_to_rootfiles_d

@@ -62,10 +62,10 @@ void ImportDataSet(RooWorkspace* ws, TTree* tree) {
 	
 	Int_t nData = data->numEntries();
 	Int_t nEntries = tree->GetEntries();
-	std::cout << "\n\n Number of entries = " << nData << "\nAnd entries in TTree = "<< nEntries << "\n\n" << std::endl;
+	cout << "\n\n Number of entries = " << nData << "\nAnd entries in TTree = "<< nEntries << "\n\n" << endl;
 }
 
-void AddModel(RooWorkspace* ws, std::string rootfilePathMC, std::string period, bool useOriginalPt) {
+void AddModel(RooWorkspace* ws, string rootfilePathMC, string period, bool useOriginalPt) {
 	// Define 2D model
 	// First define fits in mass
 	// Second define fits in pt
@@ -139,9 +139,9 @@ void AddModel(RooWorkspace* ws, std::string rootfilePathMC, std::string period, 
 	ws->import(*fitModel);
 }
 
-void MakePlots(RooWorkspace* ws, std::string period, bool drawPulls, bool logScale, bool useOriginalPt, bool write) {
+void MakePlots(RooWorkspace* ws, string period, bool drawPulls, bool logScale, bool useOriginalPt, bool write) {
 	
-	std::string suffix = "";
+	string suffix = "";
 	if (useOriginalPt) suffix = "original";
 	else suffix = "extracted";
 	
@@ -274,12 +274,12 @@ void MakePlots(RooWorkspace* ws, std::string period, bool drawPulls, bool logSca
 			monFlux << yieldJpsiExclusive->getVal() << " ";
 			monFlux << yieldBkg->getVal() << endl;
 		}
-		else { cout << "File not opened" << std::endl;}
+		else { cout << "File not opened" << endl;}
 	}
 	
 }
 
-void MCTwoDPlot(std::string rootfilePathMC, bool logScale = false, bool drawPulls = false, bool useOriginalPt = true, bool write = false) {
+void MCTwoDPlot(string rootfilePathMC, bool logScale = false, bool drawPulls = false, bool useOriginalPt = true, bool write = false) {
 	
 	gStyle->SetOptStat(0);
 	gStyle->SetTitleFontSize(.05);
@@ -294,11 +294,11 @@ void MCTwoDPlot(std::string rootfilePathMC, bool logScale = false, bool drawPull
 	gROOT->ProcessLine(".L ExtendedCrystalBall.cxx+") ;
 	gSystem->Load("./ExtendedCrystalBall_cxx.so") ;
 	
-	std::vector<std::string> periods = {"LHC16r", "LHC16s"};
+	vector<string> periods = {"LHC16r", "LHC16s"};
 	const int nPeriod = periods.size();
 	
 	for (int k = 0; k<nPeriod; k++) {
-		std::string period = periods[k];
+		string period = periods[k];
 		
 		// Open the file
 		TFile *fAna = new TFile(Form("%s/toy_MC_%s.root", rootfilePathMC.c_str(), period.c_str()),"READ");
