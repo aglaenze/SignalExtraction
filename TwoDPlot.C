@@ -53,8 +53,7 @@ void WriteResults(RooWorkspace* ws, string period, bool exp) {
 	RooRealVar* bDiss = ws->var("bDiss");
 	RooRealVar* nDiss = nullptr;
 	if (!exp) nDiss = ws->var("nDiss");
-	else {nDiss->setVal(0); nDiss->setConstant();}
-	
+	else {nDiss = new RooRealVar("nDiss", "nDiss", 0); nDiss->setConstant();}
 	RooRealVar* nInc = nullptr;
 	RooRealVar* pt0 = nullptr;
 	if (period == "LHC16r") {
@@ -62,8 +61,8 @@ void WriteResults(RooWorkspace* ws, string period, bool exp) {
 		pt0 = ws->var("pt0");
 	}
 	else {
-		nInc->setVal(0); nInc->setConstant();
-		pt0->setVal(0); pt0->setConstant();
+		nInc = new RooRealVar("nInc", "nInc", 0); nInc->setConstant();
+		pt0 = new RooRealVar("pt0", "pt0", 0); pt0->setConstant();
 	}
 	
 	RooRealVar* yieldJpsiExclusive = ws->var("yieldJpsiExclusive");
@@ -76,17 +75,20 @@ void WriteResults(RooWorkspace* ws, string period, bool exp) {
 	RooRealVar* r_diss_exc = ws->var("r_diss_exc");
 	
 	// Write the values in a text file
-	string const file("output-"+period+".txt", ios::app);	// append to the file
-	ofstream monFlux(file.c_str());
+	string file = "output-"+period;
+	if (exp) file += "-exp";
+	else file += "-powerlaw";
+	file += ".txt";
+	ofstream monFlux(file.c_str(), ios::app); // append to the file
 	
-	if(monFlux) {
+	if (monFlux) {
 		// First parameters
 		monFlux << a1->getVal() <<  " " << a1->getError() <<  " " << bExc->getVal() <<  " " << bExc->getError() <<  " " << bDiss->getVal() <<  " " << bDiss->getError() <<  " " << nDiss->getVal() <<  " " << nDiss->getError() <<  " " << nInc->getVal() <<  " " << nInc->getError() <<  " " << pt0->getVal() <<  " " << pt0->getError() << endl;
 		// Then yields
 		monFlux << yieldJpsiExclusive->getVal() <<  " " << yieldJpsiExclusive->getError() <<  " " << yieldJpsiDissociative->getVal() <<  " " << yieldJpsiDissociative->getError() <<  " " << yieldJpsiGammaPb->getVal() <<  " " << yieldJpsiGammaPb->getError() <<  " " << yieldJpsiInclusive->getVal() <<  " " << yieldJpsiInclusive->getError() <<  " " << yieldTwoGamma->getVal() <<  " " << yieldTwoGamma->getError() <<  " " << yieldBkg->getVal() <<  " " << yieldBkg->getError() <<  " " << r_diss_exc->getVal() <<  " " << r_diss_exc->getError() << endl;
 	}
 	else {
-		cout << "ERREUR: Impossible d'ouvrir le fichier." << endl;
+		cout << "\n\nERREUR: Impossible d'ouvrir le fichier.\n\n" << endl;
 	}
 }
 
@@ -376,13 +378,16 @@ void MakePlots(RooWorkspace* ws, string period, bool useCuts, Double_t mMin, Dou
 	if (!exclusiveOnly && period == "LHC16r") txt4bis->Draw();
 	
 	// Compute ratios N_diss/N_exc and N_(gamma-Pb)/N_exc
-	RooFormulaVar r_diss_exc("r_diss_exc","yieldJpsiDissociative/yieldJpsiExclusive",RooArgSet(*yieldJpsiDissociative, *yieldJpsiExclusive));
+	RooFormulaVar r_diss_exc("r_diss_exc1","yieldJpsiDissociative/yieldJpsiExclusive",RooArgSet(*yieldJpsiDissociative, *yieldJpsiExclusive));
 	RooFormulaVar r_gammaPb_exc("r_gammaPb_exc","yieldJpsiGammaPb/yieldJpsiExclusive",RooArgSet(*yieldJpsiGammaPb, *yieldJpsiExclusive));
 	string percent = "%";
 	TLatex* txt7 = new TLatex(0.2,0.3,Form("N_{diss}/N_{exc} = %.2f #pm %.2f %s", r_diss_exc.getVal()*100, r_diss_exc.getPropagatedError(*r)*100, percent.c_str()));
 	TLatex* txt8 = new TLatex(0.2,0.2,Form("N_{#gamma-Pb}/N_{exc} = %.2f #pm %.2f %s", r_gammaPb_exc.getVal()*100, r_gammaPb_exc.getPropagatedError(*r)*100, percent.c_str()));
 	txt7->Draw(); txt8->Draw();
-	ws->import(r_diss_exc);
+	
+	RooRealVar *r_diss_exc2 = new RooRealVar("r_diss_exc", "r_diss_exc", r_gammaPb_exc.getVal());
+	r_diss_exc2->setError(r_gammaPb_exc.getPropagatedError(*r));
+	ws->import(*r_diss_exc2);
 	
 	c1->cd(8);
 	if (exclusiveOnly || period == "LHC16s") {
@@ -486,7 +491,7 @@ void TwoDPlot(string rootfilePath, string rootfilePathMC, vector<string> periods
 		AddModel(wspace, rootfilePath, rootfilePathMC, period, mMin, mMax, ptMin, ptMax, exp, exclusiveOnly);
 		wspace->Print();
 		MakePlots(wspace, period, useCuts, mMin, mMax, ptMin, ptMax, drawPulls, logScale, exp, exclusiveOnly);
-		
+		WriteResults(wspace, period, exp);
 	}
 }
 

@@ -4,8 +4,8 @@
 periods="{\"LHC16r\", \"LHC16s\"}"
 #periods="{\"LHC16s\"}"
 
-mMin=2.5
-mMax=3.5
+mMin=2.0
+mMax=2.8
 
 #mMin=2.7
 #mMax=3.4
@@ -47,7 +47,8 @@ exclusiveOnly = $exclusiveOnly
 }
 
 
-delete() {
+clean() {
+filesToDelete="*.so *.d *.pcm *ACLiC* *.in *.out Include/*.so Include/*.d Include/*.pcm"
 for entry in $filesToDelete
 do
 if test -f $entry;
@@ -58,11 +59,6 @@ fi
 done
 }
 
-clean()
-{
-filesToDelete="*.so *.d *.pcm *ACLiC* *.in *.out Include/*.so Include/*.d Include/*.pcm"
-delete
-}
 
 muonfilter=std
 #muonfilter=nopXdca
@@ -87,27 +83,43 @@ echo $periods
 
 run() {
 clean
-#root -l -q "Splot.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods)"
-clean
-root -l -q "TwoDPlot.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods)"
+root -l -q "Splot.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods)"
 clean
 exit
+root -l -q "TwoDPlot.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods)"
+clean
+#exit
 }
 
+run
+
+
+exp=false
+
+for ((k=0;k<100;k++)); do
+
+# first initiate LHC16r
 inputfile="input-LHC16r.txt"
-bExc=3.6
+bExc=$(echo "scale=2; 2.8+${k}*0.02" | bc)
+bExc=3.5
 gammaPbYield=57
 initiateParameters
 
+# then LHC16s
 inputfile="input-LHC16s.txt"
+bExc=$(echo "scale=2; 4.5+${k}*0.02" | bc)
 bExc=5.3
 gammaPbYield=86
 initiateParameters
+root -l -q "TwoDPlot.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods)"
+done
 
+exit
 
 exclusiveOnly=false
 exp=true
 run
+exit
 exp=false
 run
 exit
@@ -123,7 +135,7 @@ exit
 clean
 mMin=1.3
 mMax=2.3
-root -l -q "BackgroundTest.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods, $mMin, $mMax, $ptMin, $ptMax)"
+root -l -q "Background.C+($path_to_rootfiles_data, $path_to_rootfiles_MC, $periods, $mMin, $mMax, $ptMin, $ptMax)"
 clean
 exit
 

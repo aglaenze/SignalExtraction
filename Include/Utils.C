@@ -12,7 +12,7 @@ bool Initiate(string period, Double_t& mMin, Double_t& mMax, Double_t& ptMin, Do
 	string a, b;
 	bool mMinFound = false, mMaxFound = false, ptMinFound = false, ptMaxFound = false, useCutsFound = false, logScaleFound = false, drawPullsFound = false, expFound = false, exclusiveOnlyFound = false;
 	if (file) {
-		string line {};
+		string line;
 		getline(file, line);	//first line does not contains info
 		cout << "#################################" << endl;
 		while(getline(file, line)) {
@@ -85,7 +85,7 @@ bool GetParameters(string period, Double_t& bExc, Double_t& gammaPbYield) {
 	string a, b;
 	bool bExcFound = false, gammaPbYieldFound = false;
 	if (file) {
-		string line {};
+		string line;
 		getline(file, line);	//first line does not contains info
 		while(getline(file, line)) {
 			if (line.find("bExc") != string::npos) {

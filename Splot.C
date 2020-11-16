@@ -295,6 +295,7 @@ void MakePlots(RooWorkspace *ws, string rootfilePath, string rootfilePathMc, str
 	RooRealVar* pt = ws->var("fTrkTrkPt");
 	
 	RooDataSet* sdata = (RooDataSet*) ws->data("dataWithSWeights");
+	RooDataSet* data = (RooDataSet*) ws->data("data");
 	
 	RooRealVar* jPsiYield = ws->var("fsigJpsi");
 	RooRealVar* psi2sYield = ws->var("fsigPsi2s");
@@ -350,7 +351,9 @@ void MakePlots(RooWorkspace *ws, string rootfilePath, string rootfilePathMc, str
 	RooDataSet * dataw_jpsi = new RooDataSet(sdata->GetName(),sdata->GetTitle(),sdata,*sdata->get(),0,"fsigJpsi_sw") ;
 	//RooDataSet * dataw_jpsi = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),"fTrkTrkM < 3.2 && fTrkTrkM > 2.8","fsigJpsi_sw") ;
 	// create weighted data set for Background
-	RooDataSet * dataw_bkg = new RooDataSet(sdata->GetName(),sdata->GetTitle(),sdata,*sdata->get(),0,"fbkg_sw") ;
+	RooDataSet * dataw_bkg = nullptr;
+	if (mMax < 3.1 || mMin > 3.1 ) dataw_bkg = new RooDataSet(sdata->GetName(),sdata->GetTitle(),sdata,*sdata->get(),0,"fbkg_sw") ;
+	else dataw_bkg = new RooDataSet(data->GetName(),data->GetTitle(),data,*data->get(),0) ;
 	
 	
 	// Draw J/Psi pt with weights
